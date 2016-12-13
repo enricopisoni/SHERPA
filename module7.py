@@ -139,6 +139,54 @@ def cell_dist_index_vec(x1_y1,x2_y2_vec):
     dy=pd.to_numeric(x2_y2['y2'])-float(x1_y1.split('_')[1])
     dist=np.sqrt(dx ** 2 + dy ** 2) 
     return dist   
+
+    
+'''
+NAME
+    Import info on grid points attribution to nuts or specific area type from ascii file
+PURPOSE 
+    Import info on grid points attribution to nuts or specific area type from ascii file/s. 
+    If the file is single then it must contain the column 'Area [km2]' relative to % of the area in the finest nut, 
+    this datum will be set to each nut but it will then aggregated for larger nuts when nutsarea will be calculated
+    If the files are two, then each nut will have its own % area for each grid point, then the data will be merged here
+PROGRAMMER(S)
+    Denise Pernigotti
+REVISION HISTORY
+    
+REFERENCES
+    
+'''    
+import pandas as pd  
+def read_nuts_area(filenuts):
+    nuts_def= path_input + filenuts +'.txt'
+    nuts_info = pd.read_csv(nuts_def,delimiter="\t")
+    nuts_info=nuts_info.dropna(axis=1,how='all')
+    nutsnames=list(nuts_info.columns[~nuts_info.columns.isin(['POP','COL','ROW','Area [km2]','LAT','LON'])])
+    nutsnames.insert(0, 'ALL_'+nutsnames[0])
+    nuts_info[nutsnames[0]]=nutsnames[0] 
+    nuts_info['grid']=['_'.join(str(i) for i in z) for z in zip(nuts_info['COL'],nuts_info['ROW'])]      
+    if 'Area [km2]' in nuts_info.columns:
+        nuts_area=pd.concat(map(lambda p: nuts_info['Area [km2]'],nutsnames),axis=1)
+        #nuts_area.index=nuts_info['grid']
+        nuts_area.columns=nutsnames  
+       #nuts_info=nuts_info[nutsnames]
+    else:
+        sys.exit("missing infos on grid cells area per nut")
+
+    #aggregate data for each nut, create a dictionary
+    nuts_info_all={}
+    for nut in nutsnames:
+        #create a multindex
+        index = pd.MultiIndex.from_tuples(list(zip(nuts_info['grid'],nuts_info[nut])), names=['grid', 'nutname'])
+        nut_info=pd.Series(list(nuts_area[nut]), index=index)
+        nut_info=nut_info.to_frame(name='area')
+        #aggregate data on these nuts if necessary
+        nut_info_nut=nut_info.groupby(level=[0,1]).sum()    
+        #find total area
+        grid_area_tot=nut_info_nut.groupby(level=['grid']).sum()
+        nut_info_nut['parea']=100.*nut_info_nut/grid_area_tot
+        nuts_info_all[nut]=nut_info_nut
+    return nuts_info_all
     
 '''
 NAME
@@ -200,48 +248,11 @@ if __name__ == '__main__':
     emission_nc = path_input + 'base_emissions\\BC_emi_PM25_Y.nc'
     concentration_nc = path_input + 'base_concentrations\\BC_conc_PM25_Y.nc'
     model_nc = path_input + 'source_receptors\\SR_PM25_Y.nc'
-    
-    nuts_source='netcdf'
-    #nuts_source='grid_intersect'
-    print "info e area % from",nuts_source," file"
-    if nuts_source=='netcdf': 
-        nuts_files=os.listdir(path_input + '/nuts_selection') 
-        nuts_files=filter(lambda x: 'nuts_' in x, nuts_files) #grab all files beginning with nuts_
-        nutsnames=[i.split('_')[1].split('.')[0] for i in nuts_files]               
-        #read netcdf with nuts area
-        nuts_def = pd.concat(map(lambda x: read_list_nc(path_input + '/nuts_selection/'+x),nuts_files),axis=1)
-        #keep only info on area
-        nuts_def_area=nuts_def['AREA']
-        nuts_def_area.columns=nutsnames
-        #fake nuts_info coherent with the one read from grid_intersect
-        nuts_info= pd.DataFrame(index=nuts_def_area.index, columns=nutsnames)
-        nuts_info= nuts_info.fillna('other') # filled with other
-        for nuts_idx in nutsnames:
-            nuts_info.loc[nuts_def_area[nuts_idx]>0,nuts_idx]=nuts_idx
-       
-        del(nuts_def)    
-    elif nuts_source=='grid_intersect':
-        #Read nuts fro txt file
-        nuts_def= path_input + 'selection\\grid_intersect.txt'
-        nuts_info = pd.read_csv(nuts_def,delimiter="\t")
-        nuts_info.index=['_'.join(str(i) for i in z) for z in zip(nuts_info['COL'],nuts_info['ROW'])]              
-        #save area % in another dataframe  
-        nutsnames=['NUTS_Lv0','NUTS_Lv1','NUTS_Lv2','NUTS_Lv3']
-        nutmax='NUTS_Lv3' #in case thre are more than one nut per the selected point, keep the one with maximum area for this nut
-        #calculate total area for each nut3
-        grid_area=nuts_info.groupby(by=nuts_info.index)['Area [km2]'].sum()
-        #merge this info in nuts_info
-        nuts_info=pd.merge(nuts_info,grid_area.to_frame(), left_index=True, right_index=True,how='left')
-        #calculate % of areas for each unique grid index
-        nuts_def_area= pd.DataFrame(index=nuts_info.index, columns=nutsnames)
-        nuts_def_area= nuts_def_area.fillna(100) # filled with 100s
-        for nuts_idx in nutsnames:
-            nuts_def_area[nuts_idx]=nuts_info['Area [km2]_x']*100./nuts_info['Area [km2]_y'] 
-            #reset to zero spurious NaNs
-            nuts_def_area.loc[nuts_info['Area [km2]_x']==0,nuts_idx]=0
-        #purge unused values
-        nuts_info = nuts_info[nutsnames] 
-                                
+ 
+    #grab nuts/are info from txt
+    nuts_info=read_nuts_area('selection\\grid_intersect')
+    nuts_info.update(read_nuts_area('nuts_selection\\grid_int_gcities'))
+    nuts_info.update(read_nuts_area('nuts_selection\\grid_int_fua'))
 
     
     #read netcdf files, put the data in two dataframes and check consistency 
@@ -311,61 +322,48 @@ if __name__ == '__main__':
     emissions['dist_cells']=cell_dist(emissions.loc[target_idx,'lon'],emissions.loc[target_idx,'lat'],emissions['lon'],emissions['lat'],dlon_res,dlat_res)
     #emissions['dist_cells_idx']=cell_dist_index_vec(target_idx,emissions.index)
     print "closer grid point to ",test_point," is ",zip(emissions.loc[target_idx,['lon','lat']])
-    #identify point within nuts in txt file
-    if type(nuts_info.loc[target_idx,nutsnames]) ==  pd.Series:
-            test_nut = nuts_info.loc[target_idx,nutsnames]
-    elif len(nuts_info.loc[target_idx,nutsnames]) == 0:
-        sys.exit("missing nuts information for selected point ") 
-    else:
-         test_nut =nuts_info.loc[target_idx,nutsnames][nuts_def_area.loc[target_idx,nutmax]==max(nuts_def_area.loc[target_idx,nutmax])].iloc[0,:]
-         print "there are ", nuts_info.loc[target_idx,nutsnames].shape[0], "nuts attributed to point, the more important in % for ", nutmax," is ",test_nut[nutmax]
-         print zip(nuts_info.loc[target_idx,nutmax],nuts_def_area.loc[target_idx,nutmax])
-
-    if nuts_source=='netcdf':  
-        test_nut=test_nut[test_nut!='other']
-        nutsnames=test_nut.index.tolist()
          
     #identify point within predefined radii
     #test_nut=[20,80,1000,1000000]
     #identify points with NETCDF area specification
     #test_nut=nuts_names
-    if 'alldc_snaps' in locals() or 'alldc_snaps' in globals():del(alldc_snaps)
-    for rads in nutsnames:
-        #identify points with distance
-        #rad1=emissions[emissions['dist_greatc'] <= rads].index.tolist()
-        #identify point using nuts in txt
-        #rad1 are now sharing the same nut with target_idx
-        rad1= nuts_info[nuts_info[rads]==test_nut[rads]].index
-        #drop duplicated indexes inside the selected nut
-        rad1=rad1.drop_duplicates()
-        narea=nuts_def_area[rads][nuts_info[rads]==test_nut[rads]]
-        nutsarea=narea.groupby(by=narea.index).sum()
-        #rad1=nuts_def_area.index[np.where(nuts_def_area[rads]>0)]
-        print 'there are ',len(rad1),' points with ',rads,'=',test_nut[rads]
+    all_target_nut={}
+    alldc_snaps={}
+    nutnames=nuts_info.keys()
+    nutnames.sort()
+    for rads in nuts_info.keys():
+        #identify the e nut of the target, eventually the one with the bigger area in
+        target_nut=list(nuts_info[rads].loc[target_idx,].sort_values('parea',ascending=False).index)[0]
+        all_target_nut[rads]=target_nut
+        print "for nut ",rads," the tested point is for the majority in ",target_nut
+        #select grid point in the target_nut
+        narea_data=nuts_info[rads].loc[(slice(None),target_nut),'parea']
+        narea=pd.Series(list(narea_data),index= narea_data.index.get_level_values('grid'))
+        rad1=narea.index
+        #rad1=nuts_parea.index[np.where(nuts_parea[rads]>0)]
+        print 'there are ',len(rad1),' points with nut ',rads,'=',target_nut
          #create a fake emission to zero
         emissions['deltaE']=0.
          #identify which points to apply a deltaE=E
         emissions.loc[rad1,'deltaE']=1.
         #add the calulations on area percentage in nuts
-        #careful rad1 is not a unique index in nuts_def_area and nuts_info, a point may have multiple nuts in %
-#        emissions.loc[rad1,'deltaE']= emissions.loc[rad1,'deltaE']*nuts_def_area[rads][nuts_info[rads]==test_nut[rads]]/100.
-        emissions.loc[rad1,'deltaE']= emissions.loc[rad1,'deltaE']*nutsarea[rad1]/100.
+        #careful rad1 is not a unique index in nuts_parea and nuts_info, a point may have multiple nuts in %
+        #emissions.loc[rad1,'deltaE']= emissions.loc[rad1,'deltaE']*nuts_parea[rads][nuts_info[rads]==test_nut[rads]]/100.
+        emissions.loc[rad1,'deltaE']= emissions.loc[rad1,'deltaE']*narea[rad1]/100.
         #apply model, create a dataframe, with a column for each snap and each precursor
         dc=pd.concat(map(lambda p: sherpa_model(p, model.loc[target_idx],inner_radius,emissions),precursors),axis=1)
         #aggregate data summarizing dc
         alldc=dc.sum()
         #aggregate on snaps 
-        if 'alldc_snaps' in locals() or 'alldc_snaps' in globals():
-            alldc_snaps[rads]=map(lambda s: alldc[filter (lambda x: s+'_' in x, list(dc))].sum(),snaps)
-        else:
-            alldc=map(lambda s: alldc[filter (lambda x: s+'_' in x, list(dc))].sum(),snaps)
-            alldc_snaps=pd.DataFrame(alldc, index=snaps)
-    alldc_snaps.columns=test_nut       
+        alldc_snaps[rads]=map(lambda s: alldc[filter (lambda x: s+'_' in x, list(dc))].sum(),snaps)
+     #alldc_snaps.columns=all_target_nut 
+    
+    alldc_snaps=pd.DataFrame.from_dict(alldc_snaps)    
     print model.loc[target_idx,'conc']
     print alldc_snaps
     alldc_snaps_perc=alldc_snaps*100/model.loc[target_idx,'conc']
     alldc_snaps_perc.T.plot.barh(stacked=True,xlim=(0,100),legend=False);
-    print "max perc ",alldc_snaps_perc['EU38'].sum()
+    print "max perc ",alldc_snaps_perc['ALL_NUTS_Lv0'].sum()
     #load an existing xls file
     #xfile = openpyxl.load_workbook('test.xlsx')
     #sheet = xfile.get_sheet_by_name('Sheet1')
