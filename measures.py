@@ -2,6 +2,9 @@
 """
 Created on Mon Dec 19 17:00:37 2016
 
+Measures and technologies database, 
+I have to find a better way to do this. 
+
 @author: peduzem
 """
 # create abstract methods and objects
@@ -31,31 +34,19 @@ class Vehicle(object):
         self.vtype = vtype
         self.activity = activity
         self.network = network
-        self.emf_voc = emf_voc
+        self.emf_voc = emf_voc  # ton/PJ
         self.emf_nox = emf_nox
         self.emf_ppm = emf_ppm
         self.emf_ppm_nex = emf_ppm_nex
         self.emf_sox = emf_sox
         self.emf_co2_wtw = emf_co2_wtw
-        self.eff = eff
-        self.occ = occ
-        
+        self.eff = eff  # Mvkm/PJ
+        self.occ = occ  # p/v
+
     def service_eff(self):
         """Return the service efficiency."""
-        return self.eff * self.occ
-        
-    def sale_price(self):
-        """Return the sale price for this vehicle as a float amount."""
-        if self.sold_on is not None:
-            return 0.0  # Already sold
-        return 5000.0 * self.wheels
-
-    def purchase_price(self):
-        """Return the price for which we would pay to purchase the vehicle."""
-        if self.sold_on is None:
-            return 0.0  # Not yet sold
-        return self.base_sale_price - (.10 * self.miles)
-
+        return self.eff * self.occ  # Mpkm/PJ       
+   
     @abstractmethod
     def vehicle_type(self):
         """"Return a string representing the type of vehicle this is."""
@@ -65,10 +56,10 @@ class Vehicle(object):
 class PC(Vehicle):
     """A car for sale by Jeffco Car Dealership."""
 
-    base_sale_price = 8000
-    wheels = 4
-    max_occ = 5
-    av_occ = 1.65
+#    base_sale_price = 8000
+#    wheels = 4
+#    max_occ = 5
+#    av_occ = 1.65
 
     def vehicle_type(self):
         """"Return a string representing the type of vehicle this is."""
@@ -77,9 +68,9 @@ class PC(Vehicle):
 
 class PT(Vehicle):
     """Public Transport"""
-
-    base_sale_price = 10000
-    wheels = 4
+#
+#    base_sale_price = 10000
+#    wheels = 4
 
     def vehicle_type(self):
         """"Return a string representing the type of vehicle this is."""
