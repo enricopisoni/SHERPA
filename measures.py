@@ -27,21 +27,33 @@ class Vehicle(object):
 
     base_sale_price = 0
     wheels = 0
-
+    emf={}
     def __init__(self, sector, vtype, activity, network, emf_voc, emf_nox, emf_ppm,
                  emf_ppm_nex, emf_sox, emf_co2_wtw, eff, occ):
+#        self.sector = sector
+#        self.vtype = vtype
+#        self.activity = activity
+#        self.network = network
+#        self.emf_voc = emf_voc  # ton/PJ
+#        self.emf_nox = emf_nox
+#        self.emf_ppm = emf_ppm
+#        self.emf_ppm_nex = emf_ppm_nex
+#        self.emf_sox = emf_sox
+#        self.emf_co2_wtw = emf_co2_wtw
+#        self.eff = eff  # Mvkm/PJ
+#        self.occ = occ  # p/v
         self.sector = sector
         self.vtype = vtype
-        self.activity = activity
-        self.network = network
-        self.emf_voc = emf_voc  # ton/PJ
-        self.emf_nox = emf_nox
-        self.emf_ppm = emf_ppm
-        self.emf_ppm_nex = emf_ppm_nex
-        self.emf_sox = emf_sox
-        self.emf_co2_wtw = emf_co2_wtw
-        self.eff = eff  # Mvkm/PJ
-        self.occ = occ  # p/v
+        self.activity  = activity
+        self.network  = network
+        self.emf['NMVOC']  = emf_voc  # ton/PJ
+        self.emf['NOx']  = emf_nox
+        self.emf['PPM_ex']  = emf_ppm
+        self.emf['PPM_nex']  = emf_ppm_nex
+        self.emf['SOx']  = emf_sox
+        self.emf['CO2_wtw']  = emf_co2_wtw
+        self.eff  = eff  # Mvkm/PJ
+        self.occ  = occ  # p/v
 
     def service_eff(self):
         """Return the service efficiency."""
@@ -208,9 +220,6 @@ av_gsl_pc = PC(sector, vtype, activity, network, emf_voc, emf_nox, emf_ppm,
     # define the CNG car with the class PC
 
 # 
-
-
-
  
 # Example for low emission zone
 # substituting current diesel cars with low emission
