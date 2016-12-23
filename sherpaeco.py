@@ -28,14 +28,18 @@ First trial for benefit assessment based on Enrico's matlab file"""
 
 # for importing matlab files
 import scipy.io as sio
-## math
-#from numpy import lib, zeros, sum, power, ones
+from PIL import Image
+from osgeo import gdal, osr #conda install -c conda-forge gdal
+# from pyGTiff import geotiff
+from gdalconst import *
+# math
+# from numpy import lib, zeros, sum, power, ones
 # for using netCDF files
 from netCDF4 import Dataset
 # for scientific operators
 import numpy as np
 # for plotting
-from mpl_toolkits.basemap import Basemap
+from mpl_toolkits.basemap import Basemap  #conda install -c conda-forge basemap
 import matplotlib.pyplot as plt
 from sherpa_auxiliaries import create_emission_reduction_dict, create_emission_dict, create_window, read_progress_log, write_progress_log
 from sherpa_globals import path_area_cdf_test, path_model_cdf_test, path_emission_cdf_test, path_result_cdf_test
@@ -164,10 +168,11 @@ if __name__ == '__main__':
     
     
     # open area of interest
+    # This is just to check data wiht austria, comment to consider the area of 
+    # interest (see below)
     nc_file_at = 'input/EMI_RED_ATLAS_NUTS0.nc'
     fh_area_at = Dataset(nc_file_at, mode='r')
-    area_at = fh_area_at.variables['AREA'][0][:]
-    area_area = fh_area_at.variables['AREA'][0][:] # ** this is to test to be removed
+    area_area = fh_area_at.variables['AREA'][0][:] 
     fh_area_at.close()
     
     # ** Uncomment this to make it work with the area of interest. 
@@ -176,7 +181,35 @@ if __name__ == '__main__':
     #    area_area = fh_area.variables['AREA'][:]
     #    fh_area.close() 
     
+        
+    #    nc_marco = '7km_eur_TRA_RD_LD4C_GSL_Mall.nc'
+    #    fh_marco = Dataset(nc_marco, mode='r')
+    #    CO2_TRA_RD_LD4C_GSL_Mall = fh_marco.variables['7km_eur_TRA_RD_LD4C_GSL_Mall.tif.tif'][:]
+    #    lonsm = fh_marco.variables['lon'][:]
+    #    latsm = fh_marco.variables['lat'][:]
+    #    X, Y = np.meshgrid(lonsm , latsm)
+    #    fh_marco.close()
+        
+       
+    ds   = gdal.Open('CO2_emiss/mosaic_7km/7km_eur_TRA_RD_LD4C_GSL_Mall.tif.tif')
+    arr    = ds.ReadAsArray()
+    [cols,rows] = arr.shape
+    (Xarr, deltaX, rotation, Yarr, rotation, deltaY) = ds.GetGeoTransform()
+    CO2_TRA_RD_LD4C_GSL_Mall = np.array(ds.GetRasterBand(1).ReadAsArray())
+    ds = None
+    
+    longl = []
+    for i in range(0, rows): 
+        longl.append(Xarr + i*deltaX + deltaX*0.5)
+    lonsmtif=np.array(longl)
+    latl = []
+    for i in range(0, cols): 
+        latl.append(Yarr + i*deltaY + deltaY*0.5)
+    latsmtif=np.array(latl)
+    X, Y = np.meshgrid(lonsmtif , latsmtif)
 
+    # Write projection information
+    # outdata.SetProjection(proj)
     # Load population file from Marco (treated in "regridPop" routine from Enrico).
     # The matlab file contains a structure called Anew,
     # I carried out the same operations as Enrico's matlab file.
@@ -218,12 +251,9 @@ if __name__ == '__main__':
     # **
     m_sector = 7
     sector = 'TRA_RD_LD4C'
-    at_tot_em_dict = {}
-    for precursor in precursor_lst:
-        for snap in range(1, 11):
-            at_tot_em_dict[precursor, snap - 1] = np.sum(emission_dict[precursor][snap - 1]  * area_cell * area_area / 100)
-            # [Mg] 
+    net = 'all'
     
+
     area_tot_em_dict = {}
     for precursor in precursor_lst:
         for snap in range(1, 11):
@@ -255,15 +285,19 @@ if __name__ == '__main__':
     ser_tot = {}
     dis_tot = {}
 
-    act_den[m_sector-1] = emission_dict['NMVOC'][m_sector-1]* (1/45.68) # [PJ/km2]
-    ser_den[m_sector-1] = act_den[m_sector-1] * 576.8 # Mpkm/km2 
+    act_den[m_sector-1] = emission_dict['NMVOC'][m_sector-1]* (1/67.08) # [PJ/km2]
+    ser_den[m_sector-1] = act_den[m_sector-1] * 549 # Mpkm/km2 
     act_tot[m_sector-1] = np.sum(act_den[m_sector-1] * area_cell * area_area / 100)
     ser_tot[m_sector-1] = np.sum(ser_den[m_sector-1] * area_cell * area_area / 100)
     
     act_den[m_sector-1,sector] = act_den[m_sector-1] * 0.63 # [PJ/km2]
-    ser_den[m_sector-1,sector] = act_den[m_sector-1, sector] * 576.8 # [Mpkm/km2]
+    ser_den[m_sector-1,sector] = act_den[m_sector-1, sector] * 607 # [Mpkm/km2]
     act_tot[m_sector-1,sector] = np.sum(act_den[m_sector-1, sector] * area_cell * area_area / 100)
     ser_tot[m_sector-1,sector] = np.sum(ser_den[m_sector-1, sector] * area_cell * area_area / 100)  
+    
+    em_tot ={}
+    for precursor in precursor_lst:
+        em_tot[precursor,m_sector-1] = np.sum(emission_dict[precursor][m_sector-1] * area_cell * area_area / 100)
 
 #    # results in 111.32605 PJ instead of 169.7 PJ obtained in TREMOVE, which
 #    # at the moment can be considered good enough
@@ -323,21 +357,26 @@ if __name__ == '__main__':
         else: 
             dsl_em[k] = m.av_dsl_pc_eu6.emf[k]*gsl_act
     
-    em_tot={}
+    new_em={}
     for k in m.av_gsl_pc_eu5.emf:    
         #for precursor in precursor_lst:
         for precursor in precursor_lst:
             if k in precursor_lst:
-                em_tot[k]=gls_em[k]+dsl_em[k]
+                new_em[k]=gls_em[k]+dsl_em[k]
             elif k is 'CO2_wtw':
-                em_tot[k]=gls_em['CO2_wtw']+dsl_em['CO2_wtw']
+                new_em[k]=gls_em['CO2_wtw']+dsl_em['CO2_wtw']
             elif k is 'PPM_nex':
-                em_tot['PPM']=gls_em['PPM_nex']+gls_em['PPM_ex']+dsl_em['PPM_nex']+dsl_em['PPM_ex']
+                new_em['PPM']=gls_em['PPM_nex']+gls_em['PPM_ex']+dsl_em['PPM_nex']+dsl_em['PPM_ex']
             
-          
-#    ** to be continued from here
+    finalpre_lst = ['NMVOC','NOx','PPM','SOx']
+
+    red = {}
+
+    ## start again from here, data needs to be more detailed to make sense. 
+    for finalprecursor in finalpre_lst:    
+        red[finalprecursor]= ((em_tot[finalprecursor,m_sector-1]*0.63- new_em[finalprecursor])/em_tot[finalprecursor,m_sector-1])*100
 #    redPPM =   ((tot_em_ppm_7/area_tot_act_7)*(gsl_act+dsl_act)-(gsl_em_ppm+dsl_em_ppm)) / tot_em_ppm_7 * 100
-#
+
 #    # Case 3) Increase PC
 #    
     # -------------------------------------------------------------------------
@@ -405,9 +444,9 @@ if __name__ == '__main__':
 #    pops[:] =   area_austria
 #    fh_pop30plus.close()
     # Get some parameters for the Stereographic Projection
-    #lon_0 = lons.mean()
-    #lat_0 = lats.mean()
-    
+#    lon_0 = lons.mean()
+#    lat_0 = lats.mean()
+#    
     # setup stereographic basemap.
     # lat_ts is latitude of true scale.
     # lon_0,lat_0 is central point.
@@ -424,15 +463,17 @@ if __name__ == '__main__':
     #plt.savefig('pm25.png')
     #plt.show()
     #
-    #m2 = Basemap(width=5000000, height=3500000,
-    #             resolution='l', projection='stere',
-    #             lat_ts=40, lat_0=lat_0, lon_0=lon_0)
-    #m2.drawcoastlines()
-    #xi, yi = m2(lons, lats)
-    #cs = m2.pcolor(xi, yi, np.squeeze(pop30plus), vmin=0, vmax=10000)
-    #cbar = m2.colorbar(cs, location='bottom', pad="10%")
-    #plt.title("population")
-    #
+#    lon_0 = lonsmtif.mean()
+#    lat_0 = latsmtif.mean()
+#    m2 = Basemap(width=5000000, height=3500000,
+#                 resolution='l', projection='stere',
+#                 lat_ts=40, lat_0=lat_0, lon_0=lon_0)
+#    m2.drawcoastlines()
+#    xi, yi = m2(X, Y)
+#    cs = m2.pcolor(xi, yi, np.squeeze(CO2_TRA_RD_LD4C_GSL_Murb), vmin=0, vmax=0.01)
+#    cbar = m2.colorbar(cs, location='bottom', pad="10%")
+#    plt.title("population")
+#    
     #
     #
     #plt.savefig('moll.png')
