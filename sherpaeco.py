@@ -44,7 +44,7 @@ import matplotlib.pyplot as plt
 from sherpa_auxiliaries import create_emission_reduction_dict, create_emission_dict, create_window, read_progress_log, write_progress_log
 from sherpa_globals import path_area_cdf_test, path_model_cdf_test, path_emission_cdf_test, path_result_cdf_test
 # Definition of measures and technologies 
-import measures as m
+#import measures as m
 
 import module1 as shrp
 from time import time  # for module1
@@ -53,7 +53,8 @@ from os import remove  # for module1
 
 def write_reductions(path_reduction_txt, red):
     """ 
-    Function to write the reduction file. 
+    Function to write the reduction file, that is the percentage reduction 
+    per pollutant per sector. 
     At the moment only for MS7 (**will be extended to the other sectors)
     
     Input:
@@ -61,6 +62,8 @@ def write_reductions(path_reduction_txt, red):
         - red: array with the reduction (>0) % per pollutant
     Output:
         - path_retduction_txt.txt: with the % reduction of pollutants of MS7
+    
+    @author: peduzem
     """ 
     text_file = open(path_reduction_txt, "w")
     text_file.write("POLL	MS1	MS2	MS3	MS4	MS5	MS6	MS7	MS8	MS9	MS10\n")
@@ -74,7 +77,7 @@ def write_reductions(path_reduction_txt, red):
 def calc_impacts(deaths, pop, pop30plus, pyll, pm25_cle, area_area):
 
     """
-    Methodology (used by Enrico in previous work)
+    Methodology (used by Enrico in previous work, slightly modified, check with him**)
     Anenberg, S.C. et al., 2010. Environmental Health Perspectives, 118(9),
     pp.1189–1195. Available at: http://ehp.niehs.nih.gov/0901220
     [Accessed December 13, 2016].
@@ -91,7 +94,8 @@ def calc_impacts(deaths, pop, pop30plus, pyll, pm25_cle, area_area):
     Output: 
         - deltayoll: delta yoll per grid cell 
         - deltayll_reg, deltayoll_tot
-        
+    
+    @author: peduzem
     """
     # open SCEnario (2030, MFR) and read PM2.5 values
     # **(This will not be necessary as it will be the result of module1)
@@ -158,7 +162,7 @@ if __name__ == '__main__':
     fh.close()      
        
     # Area of each cell in the domain    
-    # ** this is not in the input, has to be added
+    # ** this is not in the input folder, has to be added
     nc_file_area = 'netcdf/netcdf_with_area/JRC01.nc'
     # ** this is not in the input,
     fh_area_cells = Dataset(nc_file_area, mode='r')
@@ -190,14 +194,15 @@ if __name__ == '__main__':
     #    X, Y = np.meshgrid(lonsm , latsm)
     #    fh_marco.close()
         
-       
-    ds   = gdal.Open('CO2_emiss/mosaic_7km/7km_eur_TRA_RD_LD4C_GSL_Mall.tif.tif')
+    # Open Marco's tif files and write the information in an array   
+    ds   = gdal.Open('CO2_emiss/7km_eur_TRA_RD_LD4C_GSL_Mall.tif.tif')
     arr    = ds.ReadAsArray()
     [cols,rows] = arr.shape
     (Xarr, deltaX, rotation, Yarr, rotation, deltaY) = ds.GetGeoTransform()
     CO2_TRA_RD_LD4C_GSL_Mall = np.array(ds.GetRasterBand(1).ReadAsArray())
     ds = None
     
+    # Define longitude and latitude for the data
     longl = []
     for i in range(0, rows): 
         longl.append(Xarr + i*deltaX + deltaX*0.5)
@@ -208,8 +213,6 @@ if __name__ == '__main__':
     latsmtif=np.array(latl)
     X, Y = np.meshgrid(lonsmtif , latsmtif)
 
-    # Write projection information
-    # outdata.SetProjection(proj)
     # Load population file from Marco (treated in "regridPop" routine from Enrico).
     # The matlab file contains a structure called Anew,
     # I carried out the same operations as Enrico's matlab file.
@@ -249,11 +252,55 @@ if __name__ == '__main__':
     # WARNING - the code between **~** has many assumptions ans will be substituted
     # once Marcos files are available.
     # **
-    m_sector = 7
-    sector = 'TRA_RD_LD4C'
-    net = 'all'
     
+    # Input parameters
+    ## ** should be a function
+    m_sector = 7 # macro sector, SNAP # 7: road transport 
+    pollutant = 'NH3'  #'CO2'
+    sector = 'TRA_RD_LD4C' #sub sector
+    # net = 'Mall' # network (** will be all, urban, rural, motorway etc.)
+    net = 'all'
+    fuel_lst = ['GSL', 'MD', 'GAS', 'LPG']
+    fuel = 'GSL' #'GSL'
+    
+    # Take marco's .tif files and build an array with the information on the 
+    # emissions
+    ds   = gdal.Open('{}_emiss/7km_eur_{}_{}{}.tif.tif'.format(pollutant, sector, fuel, net))
+#    ds = gdal.Open('NH3_emis.tif'
+    em  = np.array(ds.GetRasterBand(1).ReadAsArray())
+    ds = None
 
+    # There has to be a better way to do this (tried copying from Enrico's matlab):
+    Amine = em
+    for i in range(1,382):
+        ind1=2*(i-1)  # included
+        ind2=1+2*(i-1)+1 # excluded
+        Amine[:,i-1]=(np.sum(em[:,ind1:ind2],axis=1))
+    Amine[:,382:384]=0
+    for deli in range (0,144):
+        Amine = np.delete(Amine, (0), axis=0) # delete first 144 rows
+    for delj in range (0,398): # delete last 398 columns
+        Amine = np.delete(Amine, (383), axis=1)
+    Amine_T = Amine[np.newaxis]
+    Afinal=np.fliplr(Amine_T)
+    
+    A = sio.loadmat('co2.mat')
+    Aco2 = A['Amine']
+    Aco2_T = Aco2[np.newaxis]
+    Aco2new=np.fliplr(Aco2_T)  
+    
+    emi = {}
+    emi[pollutant] = {}
+    emi['CO2'] = {}
+    emi[pollutant][sector] = {}
+    emi['CO2'][sector] = {}
+    emi[pollutant][sector][fuel] = {}
+    emi['CO2'][sector][fuel] = {}
+    emi[pollutant][sector][fuel][net] = {} 
+    emi[pollutant][sector][fuel][net] = Afinal
+    emi['CO2'][sector][fuel][net] = {} 
+    emi['CO2'][sector][fuel][net] = Aco2new
+       
     area_tot_em_dict = {}
     for precursor in precursor_lst:
         for snap in range(1, 11):
@@ -261,120 +308,174 @@ if __name__ == '__main__':
             # [Mg]         
 
     # Comparisong with the data from TREMOVE for Austria
+   
+    # Austria, TREMOVE, M7 (all road transport) vs SHERPA vs Marco
+    # Activity 221.679  vs ... vs 316 [PJ]
+    # NMVOC 12210 [Mg] vs 14457 
+    # SOX 104 [Mg] vs 144
+    # NOX 61488 [Mg] vs 107133
+    # PPM 2112+707 vs 5174
 
-    #NMVOC ￼￼14457
-    #sox 144
-    #nox 1071033
-    # [Mg]
-    #ppm_7 ￼5174.99
-    # For Austria _ fuel activity from TREMOVE 225.302+14.534 PJ for M7 
-    # M7 includes all transport means apart from ships. 
-    # For Austria _activity from TREMOVE 169.773 PJ for M7 -PC 
-    # M7 -PC includes only as MD and GSL passenger cars
-    # The average for the EU28 are used to back calculate activities the 
-    # activities as follows:
-    # 0.63 is the ratio between the acticity of PC (GSL, MD) in TREMOVE
-    # 54.19564 is the emission factor for nmvoc [ton/PJ] in TREMOVE
-    # (I chose the value with the total emissions the most similar to sherpa)
-    # 584.0085736 is the Mpkm/PJ for PC (GSL,MD) in TREMOVE
-    
-    act_den = {}
-    ser_den = {}
-    dis_den = {}
-    act_tot = {}
-    ser_tot = {}
-    dis_tot = {}
+    # For Austria, GSL PC from Marco
+    # activity 71.33405959 PJ for GLS PC (Marco) 
+    # 0.225 is the ratio between the acticity of PC (GSL) and M7 (Marco) 316 PJ
+    # 87.346743 is the emission factor for nmvoc [ton/PJ] GLS PC (Marco)  
+    # 101.161882 is the emission factor for NOx [ton/PJ] GLS PC (Marco) 
+    # 0.584308195 for PM2.5, 0.584308195 for PM10 [ton/PJ] GLS PC (Marco) 
+    # 0.434782609 for SO2/SOx [ton/PJ] GLS PC (Marco) 
+    # 24.55769089 for NH3 [ton/PJ]
+    # 66219.992 for CO2 (ttw I think) [ton/PJ]
 
-    act_den[m_sector-1] = emission_dict['NMVOC'][m_sector-1]* (1/67.08) # [PJ/km2]
-    ser_den[m_sector-1] = act_den[m_sector-1] * 549 # Mpkm/km2 
-    act_tot[m_sector-1] = np.sum(act_den[m_sector-1] * area_cell * area_area / 100)
-    ser_tot[m_sector-1] = np.sum(ser_den[m_sector-1] * area_cell * area_area / 100)
+    # Activity in PJ of the sector-fuel combination in Marcos inventory
+    # calculating it from the CO2 because directly proportional to the fuel 
+    # consumption (only ttw emissions), same emission factor for all countries
+    # apart from france and the united kingdom (I don't know why)
+    act = {}
+    act[sector] = {}
+    act[sector][fuel] = {}
+    act[sector][fuel][net] = {}
+    act[sector][fuel][net] = np.sum(emi['CO2'][sector][fuel][net]*(1/66219.992) * area_area / 100)*1000000  # [PJ]
+
+    # Emissions of the sector-fuel combination in Marcos inventory
+    em_inv ={}
+    em_inv[pollutant]={}
+    em_inv[pollutant][sector] = {}
+    em_inv[pollutant][sector][fuel] = {}
+    em_inv[pollutant][sector][fuel][net] = {}
+    em_inv[pollutant][sector][fuel][net] = np.sum(emi[pollutant][sector][fuel][net]* area_area / 100) * 1000  # ton
     
-    act_den[m_sector-1,sector] = act_den[m_sector-1] * 0.63 # [PJ/km2]
-    ser_den[m_sector-1,sector] = act_den[m_sector-1, sector] * 607 # [Mpkm/km2]
-    act_tot[m_sector-1,sector] = np.sum(act_den[m_sector-1, sector] * area_cell * area_area / 100)
-    ser_tot[m_sector-1,sector] = np.sum(ser_den[m_sector-1, sector] * area_cell * area_area / 100)  
-    
-    em_tot ={}
+
+    ef_inv ={}
+    ef_inv[pollutant]={}
+    ef_inv[pollutant][sector] = {}
+    ef_inv[pollutant][sector][fuel] = {}
+    ef_inv[pollutant][sector][fuel][net] = {}
+    ef_inv[pollutant][sector][fuel][net] = em_inv[pollutant][sector][fuel][net]/act[sector][fuel][net]
+
+    # Emissions of the macrosector in the base case (Sherpa)
+    em_bc ={}
     for precursor in precursor_lst:
-        em_tot[precursor,m_sector-1] = np.sum(emission_dict[precursor][m_sector-1] * area_cell * area_area / 100)
+        em_bc[precursor,m_sector-1] = np.sum(emission_dict[precursor][m_sector-1] * area_cell * area_area / 100)
 
-#    # results in 111.32605 PJ instead of 169.7 PJ obtained in TREMOVE, which
-#    # at the moment can be considered good enough
-
-    # -------------------------------------------------------------------------
-    # Measures implementation (**will be translated to a def)
-    # -------------------------------------------------------------------------
+    # for ammonia we don't have an emission factor from TREMOVE, for example, as a first estimate, just 
+    # to do this calculation we assume that the ef of nh3 can be decreased by dper from the bc 
     
-    # An example with a low emission zone:                                       
-                                      
-#    # total service activity for PC (GSL,MD) in the area of interest   
-#    area_tot_act_7pc = np.sum(act_den_7pc * area_cell *area_area / 100)  # [PJ]
-#    area_tot_ser_7pc= np.sum(ser_den_7pc * area_area * area_cell / 100)
-    ser_tot_sce = {}
+    redparNH3=0.3
+    ef_NH3= ef_inv[pollutant][sector][fuel][net] *(1 - redparNH3)
+        
+    em_new ={}
+    em_new[pollutant]={}
+    em_new[pollutant][sector] = {}
+    em_new[pollutant][sector][fuel] = {}
+    em_new[pollutant][sector][fuel][net] = {}
+    em_new[pollutant][sector][fuel][net] = np.sum(emi['CO2'][sector][fuel][net]*(1/66219.992) * area_area / 100)*1000000 * ef_NH3
 
-    # Case 1) Total activity is reduced by 20 % in the area of interest.
-    red_ratio = 0.2  
-    ser_tot_sce[m_sector-1,sector] = ser_tot[m_sector-1,sector] * (1-red_ratio)
-    red_on_MS = (ser_tot[m_sector-1, sector]-ser_tot_sce[m_sector-1,sector])/ ser_tot[m_sector-1] * 100
-    
-    red={}
-    #                  NOx	     NMVOC      NH3        PPM        SOx
-    red[m_sector-1] = [red_on_MS, red_on_MS, 0  , red_on_MS, red_on_MS]
-    path_reduction_txt='input/sherpaeco_reduction.txt'
-    write_reductions(path_reduction_txt, red[m_sector-1])
+    redNH3 = (em_inv[pollutant][sector][fuel][net]-em_new[pollutant][sector][fuel][net])/em_bc['NH3',m_sector-1]*100
 
-    # Case 2) Substitute mobility service and or increase p/v
-    occ = 1.65  # average accupancy for passenger cars.
-    # Data from TREMOVE show slighlty different occ
-    # Here the average value is assumed
-    newocc = 1.65  # p/v
-    m.av_gsl_pc_eu5.occ = newocc  # p/v
-    m.av_dsl_pc_eu6.occ = newocc  # p/v
-    dis_den[m_sector-1,sector] = ser_den[m_sector-1,sector] * newocc # Mpkm/km2 
-    dis_tot[m_sector-1,sector] = np.sum(dis_den[m_sector-1,sector]* area_cell * area_area /100)  # [Mvkm])
-    tot_sub_ratio = 1  # fraction of mobility substituted in the area
-    gsl_sub_ratio = tot_sub_ratio * 0.7  # fraction of tot_sub_ratio substituted with gsl
-    dsl_sub_ratio = tot_sub_ratio - gsl_sub_ratio 
-    gsl_ser = ser_tot[m_sector-1,sector] * tot_sub_ratio * gsl_sub_ratio  # Mpkm
-    dsl_ser = ser_tot[m_sector-1,sector] * tot_sub_ratio * dsl_sub_ratio  # Mpkm
-    gsl_dist = dis_tot[m_sector-1,sector] * tot_sub_ratio * gsl_sub_ratio  # Mvkm
-    dsl_dist = dis_tot[m_sector-1,sector] * tot_sub_ratio * dsl_sub_ratio  # Mvkm
-    gsl_act = gsl_ser / m.av_gsl_pc_eu5.service_eff()  # PJ
-    dsl_act = dsl_ser / m.av_dsl_pc_eu6.service_eff()  # PJ
     
-    gls_em = {}
-    for k in m.av_gsl_pc_eu5.emf:
-        if k is 'PPM_nex':
-            gls_em[k] =  m.av_gsl_pc_eu5.emf[k]*gsl_dist
-        else: 
-            gls_em[k] = m.av_gsl_pc_eu5.emf[k]*gsl_act
     
-    dsl_em = {}
-    for k in m.av_dsl_pc_eu6.emf:
-        if k is 'PPM_nex':
-            dsl_em[k] =  m.av_dsl_pc_eu6.emf[k]*gsl_dist
-        else: 
-            dsl_em[k] = m.av_dsl_pc_eu6.emf[k]*gsl_act
-    
-    new_em={}
-    for k in m.av_gsl_pc_eu5.emf:    
-        #for precursor in precursor_lst:
-        for precursor in precursor_lst:
-            if k in precursor_lst:
-                new_em[k]=gls_em[k]+dsl_em[k]
-            elif k is 'CO2_wtw':
-                new_em[k]=gls_em['CO2_wtw']+dsl_em['CO2_wtw']
-            elif k is 'PPM_nex':
-                new_em['PPM']=gls_em['PPM_nex']+gls_em['PPM_ex']+dsl_em['PPM_nex']+dsl_em['PPM_ex']
-            
-    finalpre_lst = ['NMVOC','NOx','PPM','SOx']
+#    act = {}
+#    act_den = {}
+#    ser_den = {}
+#    dis_den = {}
+#    act_tot = {}
+#    ser_tot = {}
+#    dis_tot = {}
 
-    red = {}
-
-    ## start again from here, data needs to be more detailed to make sense. 
-    for finalprecursor in finalpre_lst:    
-        red[finalprecursor]= ((em_tot[finalprecursor,m_sector-1]*0.63- new_em[finalprecursor])/em_tot[finalprecursor,m_sector-1])*100
+#    act[m_sector-1]=emi['CO2'][sector][fuel][net]*(1/66219.992)
+#    act_den[m_sector-1] = emission_dict['NMVOC'][m_sector-1]* (1/67.08) # [PJ/km2]
+#    ser_den[m_sector-1] = act_den[m_sector-1] * 549 # Mpkm/km2 
+#    act_tot[m_sector-1] = np.sum(act[m_sector-1] * area_area / 100) *1000000  #[PJ]
+#    ser_tot[m_sector-1] = np.sum(ser_den[m_sector-1] * area_cell * area_area / 100)
+#    
+#    act_den[m_sector-1,sector] = act_den[m_sector-1] * 0.63 # [PJ/km2]
+#    ser_den[m_sector-1,sector] = act_den[m_sector-1, sector] * 607 # [Mpkm/km2]
+#    act_tot[m_sector-1,sector] = np.sum(act_den[m_sector-1, sector] * area_cell * area_area / 100)
+#    ser_tot[m_sector-1,sector] = np.sum(ser_den[m_sector-1, sector] * area_cell * area_area / 100)  
+#    
+#
+#    em_tot2 ={}
+#    em_tot2[m_sector-1] = np.sum(emi[pollutant][sector][fuel][net])
+#    em_tot[m_sector-1] = np.sum(CO2em[sector][fuel][net] * area_cell * area_area / 100)
+#    for precursor in precursor_lst:
+#        em_tot[precursor,m_sector-1] = np.sum(emission_dict[precursor][m_sector-1] * area_cell * area_area / 100)
+#
+##    # results in 111.32605 PJ instead of 169.7 PJ obtained in TREMOVE, which
+##    # at the moment can be considered good enough
+#
+#    # -------------------------------------------------------------------------
+#    # Measures implementation (**will be translated to a def)
+#    # -------------------------------------------------------------------------
+#    
+#    # An example with a low emission zone:                                       
+#                                      
+##    # total service activity for PC (GSL,MD) in the area of interest   
+##    area_tot_act_7pc = np.sum(act_den_7pc * area_cell *area_area / 100)  # [PJ]
+##    area_tot_ser_7pc= np.sum(ser_den_7pc * area_area * area_cell / 100)
+#    ser_tot_sce = {}
+#
+#    # Case 1) Total activity is reduced by 20 % in the area of interest.
+#    red_ratio = 0.2  
+#    ser_tot_sce[m_sector-1,sector] = ser_tot[m_sector-1,sector] * (1-red_ratio)
+#    red_on_MS = (ser_tot[m_sector-1, sector]-ser_tot_sce[m_sector-1,sector])/ ser_tot[m_sector-1] * 100
+#    
+#    red={}
+#    #                  NOx	     NMVOC      NH3        PPM        SOx
+#    red[m_sector-1] = [red_on_MS, red_on_MS, 0  , red_on_MS, red_on_MS]
+#    path_reduction_txt='input/sherpaeco_reduction.txt'
+#    write_reductions(path_reduction_txt, red[m_sector-1])
+#
+#    # Case 2) Substitute mobility service and or increase p/v
+#    occ = 1.65  # average accupancy for passenger cars.
+#    # Data from TREMOVE show slighlty different occ
+#    # Here the average value is assumed
+#    newocc = 1.65  # p/v
+#    m.av_gsl_pc_eu5.occ = newocc  # p/v
+#    m.av_dsl_pc_eu6.occ = newocc  # p/v
+#    dis_den[m_sector-1,sector] = ser_den[m_sector-1,sector] * newocc # Mpkm/km2 
+#    dis_tot[m_sector-1,sector] = np.sum(dis_den[m_sector-1,sector]* area_cell * area_area /100)  # [Mvkm])
+#    tot_sub_ratio = 1  # fraction of mobility substituted in the area
+#    gsl_sub_ratio = tot_sub_ratio * 0.7  # fraction of tot_sub_ratio substituted with gsl
+#    dsl_sub_ratio = tot_sub_ratio - gsl_sub_ratio 
+#    gsl_ser = ser_tot[m_sector-1,sector] * tot_sub_ratio * gsl_sub_ratio  # Mpkm
+#    dsl_ser = ser_tot[m_sector-1,sector] * tot_sub_ratio * dsl_sub_ratio  # Mpkm
+#    gsl_dist = dis_tot[m_sector-1,sector] * tot_sub_ratio * gsl_sub_ratio  # Mvkm
+#    dsl_dist = dis_tot[m_sector-1,sector] * tot_sub_ratio * dsl_sub_ratio  # Mvkm
+#    gsl_act = gsl_ser / m.av_gsl_pc_eu5.service_eff()  # PJ
+#    dsl_act = dsl_ser / m.av_dsl_pc_eu6.service_eff()  # PJ
+#    
+#    gls_em = {}
+#    for k in m.av_gsl_pc_eu5.emf:
+#        if k is 'PPM_nex':
+#            gls_em[k] =  m.av_gsl_pc_eu5.emf[k]*gsl_dist
+#        else: 
+#            gls_em[k] = m.av_gsl_pc_eu5.emf[k]*gsl_act
+#    
+#    dsl_em = {}
+#    for k in m.av_dsl_pc_eu6.emf:
+#        if k is 'PPM_nex':
+#            dsl_em[k] =  m.av_dsl_pc_eu6.emf[k]*gsl_dist
+#        else: 
+#            dsl_em[k] = m.av_dsl_pc_eu6.emf[k]*gsl_act
+#    
+#    new_em={}
+#    for k in m.av_gsl_pc_eu5.emf:    
+#        #for precursor in precursor_lst:
+#        for precursor in precursor_lst:
+#            if k in precursor_lst:
+#                new_em[k]=gls_em[k]+dsl_em[k]
+#            elif k is 'CO2_wtw':
+#                new_em[k]=gls_em['CO2_wtw']+dsl_em['CO2_wtw']
+#            elif k is 'PPM_nex':
+#                new_em['PPM']=gls_em['PPM_nex']+gls_em['PPM_ex']+dsl_em['PPM_nex']+dsl_em['PPM_ex']
+#            
+#    finalpre_lst = ['NMVOC','NOx','PPM','SOx']
+#
+#    red = {}
+#
+#    ## start again from here, data needs to be more detailed to make sense. 
+#    for finalprecursor in finalpre_lst:    
+#        red[finalprecursor]= ((em_tot[finalprecursor,m_sector-1]*0.63- new_em[finalprecursor])/em_tot[finalprecursor,m_sector-1])*100
 #    redPPM =   ((tot_em_ppm_7/area_tot_act_7)*(gsl_act+dsl_act)-(gsl_em_ppm+dsl_em_ppm)) / tot_em_ppm_7 * 100
 
 #    # Case 3) Increase PC
@@ -446,36 +547,38 @@ if __name__ == '__main__':
     # Get some parameters for the Stereographic Projection
 #    lon_0 = lons.mean()
 #    lat_0 = lats.mean()
+##    
+##    # setup stereographic basemap.
+##    # lat_ts is latitude of true scale.
+##    # lon_0,lat_0 is central point.
+#    check = Aco2new-Afinal
+#    m = Basemap(width=5000000, height=4500000,
+#                resolution='l', projection='stere',
+#                lat_ts=40, lat_0=lat_0, lon_0=lon_0)
+#    m.drawcoastlines()
+#    xi, yi = m(lons, lats)
 #    
-    # setup stereographic basemap.
-    # lat_ts is latitude of true scale.
-    # lon_0,lat_0 is central point.
-    #m = Basemap(width=5000000, height=3500000,
-    #            resolution='l', projection='stere',
-    #            lat_ts=40, lat_0=lat_0, lon_0=lon_0)
-    #m.drawcoastlines()
-    #xi, yi = m(lons, lats)
-    #
-    #cs = m.pcolor(xi, yi, np.squeeze(pm25_cle))
-    #cbar = m.colorbar(cs, location='bottom', pad="10%")
-    #
-    #plt.title("PM2.5")
-    #plt.savefig('pm25.png')
-    #plt.show()
-    #
-#    lon_0 = lonsmtif.mean()
-#    lat_0 = latsmtif.mean()
-#    m2 = Basemap(width=5000000, height=3500000,
+#    cs = m.pcolor(xi, yi, np.squeeze(Aco2new), vmin=0, vmax=0.01)
+#    cbar = m.colorbar(cs, location='bottom', pad="10%")
+#    
+#    plt.title("PM2.5")
+#    plt.savefig('pm25.png')
+#    plt.show()
+#    
+##    lon_0 = lonsmtif.mean()
+##    lat_0 = latsmtif.mean()
+#    m2 = Basemap(width=5000000, height=4500000,
 #                 resolution='l', projection='stere',
 #                 lat_ts=40, lat_0=lat_0, lon_0=lon_0)
 #    m2.drawcoastlines()
-#    xi, yi = m2(X, Y)
-#    cs = m2.pcolor(xi, yi, np.squeeze(CO2_TRA_RD_LD4C_GSL_Murb), vmin=0, vmax=0.01)
+##    xi, yi = m2(X, Y)
+#    xi, yi = m(lons, lats)
+#    cs = m2.pcolor(xi, yi, np.squeeze(check), vmin=0, vmax=0.00000000001)
 #    cbar = m2.colorbar(cs, location='bottom', pad="10%")
 #    plt.title("population")
 #    
     #
     #
     #plt.savefig('moll.png')
-    #plt.show()
+    plt.show()
     pass
