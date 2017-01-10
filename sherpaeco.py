@@ -249,23 +249,25 @@ if __name__ == '__main__':
     # ** should be a function
     m_sector = 7 # macro sector, SNAP # 7: road transport 
     #pollutant = 'NH3'  
-    pollutant_lst = ['NH3','NOx','VOC', 'SO2']
+    pollutant_lst = ['NH3','NOx','VOC', 'SO2', 'PM10']
     # sector = 'TRA_RD_LD4C' #sub sector
     sector_lst = ['TRA_RD_LD4C','TRA_RD_HDB','TRA_RD_LD2','TRA_RD_LD4T','TRA_RD_HDT' ]
     # net = network (** will be all, urban, rural, motorway etc.)
     net = 'all' # network
-    fuel_lst = ['GSL', 'MD', 'GAS', 'LPG']
-    
+    fuel_lst = ['GSL', 'MD', 'GAS', 'LPG', 'TYRE']
+
     # Take marco's .tif files and build corresponding arrays with the information on the 
     # emissions
     
     # initialiaze arrays
     emi = {} # emission inventory (for Sherpa)
     em_inv ={} # emission inventory (Marco's grid)
-    act = {} # activity 
-    ef_inv ={} # emission factor inventory
+    act = {} # activity [PJ]
+    ser = {} # service [Mvkm]
+    ef_inv ={} # emission factor inventory (Marco)
     em_new ={} # emission after measure implementation
     red = {} # reduction at the macrosector level 
+    
     # calculate the activity level starting from the CO2 emission inventory
     # Activity in PJ for each sector-fuel combination in Marcos inventory
     # calculating it from the CO2 because directly proportional to the fuel 
@@ -314,6 +316,57 @@ if __name__ == '__main__':
                 act[sector][fuel][net] = np.sum(emi['CO2'][sector][fuel][net]*(1/66219.992) * area_area / 100)*1000000  # [PJ]
             except(RuntimeError, AttributeError):
                     pass
+                
+    emi['PM10'] = {}
+    emftyre = {}
+
+    emftyre['TRA_RD_LD4C']=0.0089238 # kton/Gvkm
+    emftyre['TRA_RD_HDB']=0.0152918237 # kton/Gvkm
+    emftyre['TRA_RD_LD2']=0.0038364 # kton/Gvkm
+    emftyre['TRA_RD_LD4T']=0.0140946 # kton/Gvkm
+    emftyre['TRA_RD_HDT']=0.0396 # kton/Gvkm
+    emftyre['M4']=0.0038364 # kton/Gvkm
+
+    for sector in sector_lst: 
+        # initialiaze arrays
+        emi['PM10'][sector] = {}
+        ser[sector] = {} 
+        tyre = 'TYRE'
+        ser[sector] = {}
+        ser[sector][net] = {}
+        emi['PM10'][sector][tyre] = {}
+        emi['PM10'][sector][tyre][net] = {} 
+        # open PM10 emission inventory
+        ds = None
+        try:
+            ds = gdal.Open('PM10_emiss/7km_eur_{}_{}{}.tif.tif'.format(sector, fuel, net))
+#           # write data in array                
+            emPPM  = np.array(ds.GetRasterBand(1).ReadAsArray())
+            ds = None
+            # re-arrange emission inventory file for Sherpa's grid 
+            # (tried copying from Enrico's matlab):
+            # initialize array
+            Amineppm = emPPM
+            for i in range(1,382):
+                ind1=2*(i-1)  # included
+                ind2=1+2*(i-1)+1 # excluded
+                Amineppm[:,i-1]=(np.sum(emPPM[:,ind1:ind2],axis=1))
+            Amineppm[:,382:384]=0
+            # Cancelling the extra columns and extra rows 
+            # (there has to be a better way to do this) 
+            for deli in range (0,144):
+                Amineppm = np.delete(Amineppm, (0), axis=0) # delete first 144 rows
+            for delj in range (0,398): # delete last 398 columns
+                Amineppm = np.delete(Amineppm, (383), axis=1)
+            Amineppm_T = Amineppm[np.newaxis]
+            Amineppm=np.fliplr(Amineppm_T)
+#    
+            # PPM emissions (Sherpa's grid)
+            emi['PM10'][sector][tyre][net] =  Amineppm
+            # Activity emissions (Sherpa's grid)
+            ser[sector][net] = np.sum(emi['PM10'][sector][tyre][net]*(1/emftyre[sector]) * area_area / 100) *1000 # [Mvkm]
+        except(RuntimeError, AttributeError):
+                pass
             
     for pollutant in pollutant_lst: 
         emi[pollutant] = {}
@@ -369,8 +422,11 @@ if __name__ == '__main__':
                 
                     # Emissions of the sector-fuel combination in Marcos inventory
                     try: 
-                        em_inv[pollutant][sector][fuel][net] = np.sum(emi[pollutant][sector][fuel][net]* area_area / 100) * 1000  # ton   
-                        ef_inv[pollutant][sector][fuel][net] = em_inv[pollutant][sector][fuel][net]/act[sector][fuel][net]
+                        em_inv[pollutant][sector][fuel][net] = np.sum(emi[pollutant][sector][fuel][net]* area_area / 100) * 1000  # ton    
+                        if fuel is 'TYRE':
+                            ef_inv[pollutant][sector][fuel][net] = em_inv[pollutant][sector][fuel][net]/ser[sector][net]
+                        else:
+                            ef_inv[pollutant][sector][fuel][net] = em_inv[pollutant][sector][fuel][net]/act[sector][fuel][net]
                     except RuntimeError, err:
                         pass
                 except(RuntimeError, AttributeError):
@@ -381,10 +437,10 @@ if __name__ == '__main__':
     # write data in array 
     for pollutant in pollutant_lst: 
         em_inv[pollutant] = np.sum(np.sum(em_inv[pollutant][sector][fuel][net] for fuel in fuel_lst ) for sector in sector_lst)
-    # -------------------------------------------------------------------------
-    # Measures implementation (**will be translated to a def)
-    # -------------------------------------------------------------------------
-   
+#    # -------------------------------------------------------------------------
+#    # Measures implementation (**will be translated to a def)
+#    # -------------------------------------------------------------------------
+#   
     # New emission factors after the implementation of measures:
     # first option - reduction of the emission factors for each sector/activity
     # read csv file with the emission factors
@@ -404,7 +460,10 @@ if __name__ == '__main__':
                 em_new[pollutant][sector][fuel][net] = {}
                 if ef_inv[pollutant][sector][fuel][net]:
                     ef = ef_inv[pollutant][sector][fuel][net] *(1 - df.loc[pollutant,fuel][sector])
-                    em_new[pollutant][sector][fuel][net] = np.sum(emi['CO2'][sector][fuel][net]*(1/66219.992) * area_area / 100)*1000000 * ef   
+                    if fuel is 'TYRE':
+                        em_new[pollutant][sector][fuel][net] = np.sum(ser[sector][net] * area_area / 100) * ef
+                    else:
+                        em_new[pollutant][sector][fuel][net] = np.sum(act[sector][fuel][net] * area_area / 100) * ef
                      # if the array is empty write zero (there's probably a better way to do this so that I can do the sum below)
                 if not em_new[pollutant][sector][fuel][net]:
                     em_new[pollutant][sector][fuel][net]=0.0
@@ -422,11 +481,13 @@ if __name__ == '__main__':
                 red[precursor] = (em_inv['VOC']-em_new['VOC'])/em_bc[precursor,m_sector-1]*100
         if precursor == 'SOx': 
                 red[precursor] = (em_inv['SO2']-em_new['SO2'])/em_bc[precursor,m_sector-1]*100
+        if precursor == 'PPM':
+                red[precursor] = (em_inv['PM10']-em_new['PM10'])/em_bc[precursor,m_sector-1]*100
 
     reductions = {}
     reductions[m_sector-1]={}
 #    #                         NOx	     NMVOC      NH3        PPM        SOx
-    reductions[m_sector-1] = [red['NOx'], red['NMVOC'], red['NH3'] , 0, red['SOx']]
+    reductions[m_sector-1] = [red['NOx'], red['NMVOC'], red['NH3'] , red['PPM'], red['SOx']]
     path_reduction_txt='input/sherpaeco_reduction.txt'
     write_reductions(path_reduction_txt, reductions[m_sector-1])
 
