@@ -31,18 +31,12 @@ Thre are three directories:
 # imports
 # this is necessary because in py27 / is integer division
 # whereas in py3.5 / is float division! 
-from __future__ import division
-                                    
-
-
+from __future__ import division                                 
 # for importing matlab files
 import scipy.io as sio
 from PIL import Image
 # gdal package to hanlde tiff, because of this package I had to switch to 
-# python 2.7 
-
-
-from osgeo import gdal, osr #conda install -c conda-forge gdal
+# python 2.7 from osgeo import gdal, osr #conda install -c conda-forge gdal
 # from pyGTiff import geotiff
 from gdalconst import *
 # math
@@ -66,14 +60,15 @@ import csv
 # to save results direclty as python objects
 import pickle
 
+# -----------------------------------------------------------------------------
 def save_obj(obj, name ):
     with open('workdir/'+ name + '.pkl', 'wb') as f:
         pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-
+# -----------------------------------------------------------------------------
 def load_obj(name ):
     with open('workdir/' + name + '.pkl', 'rb') as f:
         return pickle.load(f)   
-
+# -----------------------------------------------------------------------------
 def write_reductions(path_reduction_txt, red):
     """ 
     Function to write the reduction file, that is the percentage reduction 
@@ -96,7 +91,7 @@ def write_reductions(path_reduction_txt, red):
     text_file.write("PPM	0	0	0	0	0	0	%s	0	0	0\n" % red[3])
     text_file.write("SOx	0	0	0	0	0	0	%s	0	0	0\n" % red[4])  
     text_file.close()
-
+# -----------------------------------------------------------------------------
 def calc_impacts(deltaconc, area_area):
 
     """
@@ -182,128 +177,15 @@ def calc_impacts(deltaconc, area_area):
     deltayoll_tot = deltamoll_tot / 12
     
     return delta_yll, deltayll_reg, deltayoll_tot
-
-# main program starts here
-if __name__ == '__main__':
+# -----------------------------------------------------------------------------  
     
-    # -------------------------------------------------------------------------
-    # Preparing the data (**will be translated to a def)
-    # -------------------------------------------------------------------------
-
-    # read the precursors list (as in model1)  
-    rootgrp = Dataset(path_model_cdf_test, 'r')
-    precursor_lst = getattr(rootgrp, 'Order_Pollutant').split(', ')
-
-    # create a dictionary with emissions per precursor, macrosector and postion (lat, lon)
-    emission_dict = create_emission_dict(path_emission_cdf_test, precursor_lst)
-
-    # open 2010 CLE and read PM2.5 concentration values
-    # ** this is not in the input directory on svn
-    #, file with the current concentrations, this will not be necessary in the future
-    # be carefull lons and lats are used later. 
-    nc_file = 'netcdf/sherpaRiat-inerisEMI-pm25AQI-2010CLE.nc'
-    fh = Dataset(nc_file, mode='r')
-    lons = fh.variables['lon'][:]
-    lats = fh.variables['lat'][:]
-    pm25_cle = fh.variables['PM25'][:]
-    pm25_units_cle = fh.variables['PM25'].units
-    fh.close()      
-       
-    # Area of each cell in the domain    
-    # ** this is not in the input folder, has to be added
-    nc_area = 'netcdf/netcdf_with_area/JRC01.nc'
-    # ** this is not in the directory on svn
-    fh_area = Dataset(nc_area, mode='r')
-    area = fh_area.variables['surface'][:]
-    area_units = fh_area.variables['surface'].units
-#    lons = fh_area.variables['lon'][:]
-#    lats = fh_area.variables['lat'][:]
-    fh_area.close() 
-    
-    
-    # open area of interest selarea = selected area
-    # This is just to check data with Austria (0), comment to consider the area of 
-    # interest (see below)
-    nc_file_at = 'input/EMI_RED_ATLAS_NUTS0.nc'
-    fh_area_at = Dataset(nc_file_at, mode='r')
-    area_area = fh_area_at.variables['AREA'][0][:] 
-    fh_area_at.close()
-    # ** Uncomment this to make it work with the area of interest. 
-    #    nc_file_reg = path_area_cdf_test 
-    #    fh_area = Dataset(nc_file_reg, mode='r')
-    #    area_area = fh_area.variables['AREA'][:]
-    #    fh_area.close() 
-    
-    # save the area of interest in a nc file so it can be used later by module 1
-    # **this will not be necessary as this file is created by/provided to Sherpa 
-    nc_selarea = 'workdir/selarea.nc'
-    fh_selarea = Dataset(nc_selarea, mode='w')
-    fh_selarea.createDimension('time', 1)
-    fh_selarea.createDimension('y', 448)
-    fh_selarea.createDimension('x', 384)
-    lati = fh_selarea.createVariable('lat', 'f4', ('y', 'x'))
-    longi = fh_selarea.createVariable('lon', 'f4', ('y', 'x'))
-    selarea = fh_selarea.createVariable('AREA', 'f4', ('y', 'x'))
-    fh_selarea.variables['AREA'].units = '%'
-    fh_selarea.variables['AREA'].long_name = '% cell area belonging to selected area'
-    longi[:] = lons
-    lati[:] = lats
-    selarea[:] = area_area
-    fh_selarea.close()
-
-    # open a file from Marco in order to extract the data to adapt the grid
-    # be careful the values will be used later
-    ds   = gdal.Open('CO2_emiss/7km_eur_TRA_RD_LD4C_GSL_Mall.tif.tif')
-    arr    = ds.ReadAsArray()
-    [cols,rows] = arr.shape
-    (Xarr, deltaX, rotation, Yarr, rotation, deltaY) = ds.GetGeoTransform()
-    ds = None   
-    # Define longitude and latitude for the data
-    longl = []
-    for i in range(0, rows): 
-        longl.append(Xarr + i*deltaX + deltaX*0.5)
-    lonsmtif=np.array(longl)
-    latl = []
-    for i in range(0, cols): 
-        latl.append(Yarr + i*deltaY + deltaY*0.5)
-    latsmtif=np.array(latl)
-    X, Y = np.meshgrid(lonsmtif , latsmtif)
-
-
-    # -------------------------------------------------------------------------
-    # Rading data from Marco's inventory files
-    # -------------------------------------------------------------------------
-    # Take marco's .tif files and build corresponding arrays with the information on the 
-    # pollutants - sector - activity - network
-    # will become a function
-    
-    # -------------------------------------------------------------------------
-    # Input parameters
-    m_sector = 7 # macro sector, SNAP # 7: road transport 
-    # List of pollutants of interest  
-    pollutant_lst = ['NH3','NOx','VOC', 'SO2', 'PM10']
-    # List of subsectors of the m_sector
-    sector_lst = ['TRA_RD_LD4C','TRA_RD_HDB','TRA_RD_LD2','TRA_RD_LD4T','TRA_RD_HDT','TRA_RD_M4' ]
-    # network (** at the moment only 'all' but can be extended)
-    net = 'all' # network
-    # list of fuels (**could be more properly called activities)
-    fuel_lst = ['GSL', 'MD', 'GAS', 'LPG','TYRE'] # 'GSL', 'MD', 'GAS', 'LPG',
-    nonfuels_lst = ['TYRE']
-    # -------------------------------------------------------------------------
-    
-    
-    # initialiaze arrays
+def readinventories(m_sector, pollutant_lst, sector_lst, net, fuel_lst, nonfuels_lst, name_em_inv, name_ser, name_act):
+        # initialiaze arrays
     emi = {} # gridded emissions (Marcos units)
     em_inv ={} # emission inventory (Marco)
     act = {} # activity [PJ] gridded
-    act_tot = {} # total activity [PJ] in the area of interest 
     ser = {} # service [Mvkm]
-    ser_tot = {} # total service [Mvkm] in the area of interest 
-    ef_inv ={} # emission factor inventory (Marco)
-    em_tot = {}
-    em_new ={} # emission after measure implementation
-    red = {} # reduction at the macrosector level 
-    
+
     # -------------------------------------------------------------------------
     # calculate the energy use activity level starting from the CO2 emission inventory
     # Activity in PJ for each sector-fuel combination in Marcos inventory
@@ -471,23 +353,140 @@ if __name__ == '__main__':
                     em_inv[pollutant][sector][fuel].pop(net, None)
                     em_inv[pollutant][sector].pop(fuel, None)  
                     pass
-    name_em_inv= 'em_inv'
-    save_obj((em_inv), name_em_inv)   
-
-    name_act= 'act'
-    save_obj((act), name_act)
     
+    save_obj((em_inv), name_em_inv)   
+    save_obj((act), name_act)
+    save_obj((ser), name_ser)
+ 
+    return
+    
+# main program starts here
+if __name__ == '__main__':
+    
+    # -------------------------------------------------------------------------
+    # Preparing the data (**will be translated to a def)
+    # -------------------------------------------------------------------------
+
+    # open 2010 CLE and read PM2.5 concentration values
+    # ** this is not in the input directory on svn
+    # file with the CLE concentrations, this will not be necessary in the future
+    # I need it only to load lons and lats are used later. 
+    nc_file = 'netcdf/sherpaRiat-inerisEMI-pm25AQI-2010CLE.nc'
+    fh = Dataset(nc_file, mode='r')
+    lons = fh.variables['lon'][:]
+    lats = fh.variables['lat'][:]
+    pm25_cle = fh.variables['PM25'][:]
+    pm25_units_cle = fh.variables['PM25'].units
+    fh.close()      
+       
+    # Area of each cell in the domain    
+    # ** this is not in the input folder, has to be added
+    nc_area = 'netcdf/netcdf_with_area/JRC01.nc'
+    # ** this is not in the directory on svn
+    fh_area = Dataset(nc_area, mode='r')
+    area = fh_area.variables['surface'][:]
+    area_units = fh_area.variables['surface'].units
+#    lons = fh_area.variables['lon'][:]
+#    lats = fh_area.variables['lat'][:]
+    fh_area.close() 
+    
+    
+    # open area of interest selarea = selected area
+    # This is just to check data with Austria (0), comment to consider the area of 
+    # interest (see below)
+    nc_file_at = 'input/EMI_RED_ATLAS_NUTS0.nc'
+    fh_area_at = Dataset(nc_file_at, mode='r')
+    area_area = fh_area_at.variables['AREA'][0][:] 
+    fh_area_at.close()
+    # ** Uncomment this to make it work with the area of interest. 
+    #    nc_file_reg = path_area_cdf_test 
+    #    fh_area = Dataset(nc_file_reg, mode='r')
+    #    area_area = fh_area.variables['AREA'][:]
+    #    fh_area.close() 
+    
+    # save the area of interest in a nc file so it can be used later by module 1
+    # **this will not be necessary as this file is created by/provided to Sherpa 
+    nc_selarea = 'workdir/selarea.nc'
+    fh_selarea = Dataset(nc_selarea, mode='w')
+    fh_selarea.createDimension('time', 1)
+    fh_selarea.createDimension('y', 448)
+    fh_selarea.createDimension('x', 384)
+    lati = fh_selarea.createVariable('lat', 'f4', ('y', 'x'))
+    longi = fh_selarea.createVariable('lon', 'f4', ('y', 'x'))
+    selarea = fh_selarea.createVariable('AREA', 'f4', ('y', 'x'))
+    fh_selarea.variables['AREA'].units = '%'
+    fh_selarea.variables['AREA'].long_name = '% cell area belonging to selected area'
+    longi[:] = lons
+    lati[:] = lats
+    selarea[:] = area_area
+    fh_selarea.close()
+
+    # open a file from Marco in order to extract the data to adapt the grid
+    # be careful the values will be used later
+    ds   = gdal.Open('CO2_emiss/7km_eur_TRA_RD_LD4C_GSL_Mall.tif.tif')
+    arr    = ds.ReadAsArray()
+    [cols,rows] = arr.shape
+    (Xarr, deltaX, rotation, Yarr, rotation, deltaY) = ds.GetGeoTransform()
+    ds = None   
+    # Define longitude and latitude for the data
+    longl = []
+    for i in range(0, rows): 
+        longl.append(Xarr + i*deltaX + deltaX*0.5)
+    lonsmtif=np.array(longl)
+    latl = []
+    for i in range(0, cols): 
+        latl.append(Yarr + i*deltaY + deltaY*0.5)
+    latsmtif=np.array(latl)
+    X, Y = np.meshgrid(lonsmtif , latsmtif)
+
+
+    # -------------------------------------------------------------------------
+    # Rading data from Marco's inventory files
+    # -------------------------------------------------------------------------
+    # Take marco's .tif files and build corresponding arrays with the information on the 
+    # pollutants - sector - activity - network
+    # will become a function
+    
+    # -------------------------------------------------------------------------
+    # Input parameters
+    m_sector = 7 # macro sector, SNAP # 7: road transport 
+    # List of pollutants of interest  
+    pollutant_lst = ['NH3','NOx','VOC', 'SO2', 'PM10']
+    # List of subsectors of the m_sector
+    sector_lst = ['TRA_RD_LD4C','TRA_RD_HDB','TRA_RD_LD2','TRA_RD_LD4T','TRA_RD_HDT','TRA_RD_M4' ]
+    # network (** at the moment only 'all' but can be extended)
+    net = 'all' # network
+    # list of fuels (**could be more properly called activities)
+    fuel_lst = ['GSL', 'MD', 'GAS', 'LPG','TYRE'] # 
+    nonfuels_lst = ['TYRE']
+
+    name_em_inv= 'em_inv'
     name_ser= 'ser'
-    save_obj((ser), name_ser) 
-           
+    name_act= 'act'
+    # -------------------------------------------------------------------------
+    
+    # uncomment to read inventories from Marco
+#    readinventories(m_sector, pollutant_lst, sector_lst, net, fuel_lst, nonfuels_lst, name_em_inv, name_ser, name_act)
+    
+      
     # -------------------------------------------------------------------------
     # Measures implementation (**will be translated to a def)
     # -------------------------------------------------------------------------
     
+    # load results of readinventories
     em_inv=load_obj(name_em_inv)
     act=load_obj(name_act)
     ser=load_obj(name_ser)
     
+    # initialization
+    ser_tot = {} # total service [Mvkm] in the area of interest 
+    ef_inv ={} # emission factor inventory (Marco)
+    em_tot = {} # total emissions [ton] in the area of interest 
+    em_new ={} # emission after measure implementation
+    red = {} # reduction at the macrosector level 
+    act_tot = {} # total activity [PJ] in the area of interest 
+    
+    # calculate total activity in area of interest
     for sector in act: 
             act_tot[sector]={}
             for fuel in act[sector]:    
@@ -499,6 +498,7 @@ if __name__ == '__main__':
                     except(RuntimeError, AttributeError, TypeError):
                             pass  
     
+    # calculate total service in area of interest
     for sector in ser: 
         ser_tot[sector]={}
         ser_tot[sector][net]={}
@@ -507,7 +507,7 @@ if __name__ == '__main__':
         except(RuntimeError, AttributeError, TypeError):
             pass
 
-        
+    # calculate total emissions and emission factors in area of interest  
     for pollutant in em_inv:
         ef_inv[pollutant]={}  
         em_tot[pollutant]={}
@@ -528,12 +528,19 @@ if __name__ == '__main__':
                     em_tot[pollutant][sector][fuel][net] = np.sum(em_inv[pollutant][sector][fuel][net] * area_area / 100) 
                     ef_inv[pollutant][sector][fuel][net] = em_tot[pollutant][sector][fuel][net]/ser_tot[sector][net]
 
-                           
+    # technical measures                      
     # New emission factors after the implementation of measures:
     # first option - reduction of the emission factors for each sector/activity
     # read csv file with the emission factors
     df = pd.read_csv('input/ef_red_sherpaeco.csv',  index_col=[0,1], names=['POLL','ACT'].extend(sector_lst), skipinitialspace=True)
     # second option (to be implemented**)- emission factors for the best available technology
+    
+    # read the precursors list (as in model1)  
+    rootgrp = Dataset(path_model_cdf_test, 'r')
+    precursor_lst = getattr(rootgrp, 'Order_Pollutant').split(', ')
+    # create a dictionary with emissions per precursor, macrosector and postion (lat, lon)
+    emission_dict = create_emission_dict(path_emission_cdf_test, precursor_lst)
+    
     
     em_bc ={} # emissions for the base case
     for precursor in precursor_lst:
