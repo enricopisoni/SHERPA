@@ -154,11 +154,12 @@ def calc_impacts(deltaconc, area_area):
     # ir = pyll / 100000 * pop / deaths
 
     # crf derived by RR in Anenberg, S.C. et al., 2010. 
-    crf = 0.006
-
+    # crf = 0.006
+    beta = 0.006015392281974714 # Taken from AirQ+ (WHO)
     # Delta mortality
-    delta_mort = pm25_delta*crf*pop30plus*drate
-        
+    #delta_mort = pm25_delta*crf*pop30plus*drate
+#    delta_mort = pm25_delta*crf*pop30plus*drate  
+    delta_mort = (1-(np.exp(-beta*pm25_delta)))*pop30plus*drate  
     # Delat Years of life loss (yll) and months of life loss (mll).
     delta_yll = delta_mort * pyll/100000 / drate
 #    yllsce = mortsce * pyll/100000 / drate
@@ -196,7 +197,15 @@ def readinventories(m_sector, pollutant_lst, sector_lst, net, fuel_lst, nonfuels
     # ** the different emission factors for F and UK should be taken into account  
    
     # emission factor ttw for CO2
-    emfco2 = 66219.992 # ton/PJ
+#    emfco2 = 66219.992 # ton/PJ
+
+    emfco2={}
+    emfco2['GSL']= 66219.9916000 # ton/PJ
+    emfco2['MD']= 68571.3810000 # ton/PJ
+    emfco2['LPG']= 68600.0000000  # ton/PJ
+    emfco2['GAS']= 55800.0000000  # ton/PJ
+
+
     # initialiaze arrays
     emi['CO2'] = {}
     for sector in sector_lst: 
@@ -236,7 +245,7 @@ def readinventories(m_sector, pollutant_lst, sector_lst, net, fuel_lst, nonfuels
                     # CO2 emissions (fitting Sherpa's grid)
                     emi['CO2'][sector][fuel][net] =  Afinalco2 # Mton of CO2 (careful!!, the other inventories are in kton)
                     # Activity emissions (Sherpa's grid)
-                    act[sector][fuel][net] = emi['CO2'][sector][fuel][net]*(1/emfco2)*1000000  # [PJ]
+                    act[sector][fuel][net] = emi['CO2'][sector][fuel][net]*(1/emfco2[fuel])*1000000  # [PJ]
                 except(RuntimeError, AttributeError):
                     # Like this I remove the arrays that would be empty
                     act[sector][fuel].pop(net, None)
@@ -403,7 +412,7 @@ if __name__ == '__main__':
 #    nc_file_at = 'input/EMI_RED_ATLAS_NUTS1.nc'
     nc_file_at = 'input/EMI_RED_ATLAS_NUTS0.nc'
     fh_area_at = Dataset(nc_file_at, mode='r')
-    area_area = fh_area_at.variables['AREA'][16][:] 
+    area_area = fh_area_at.variables['AREA'][0][:] 
     fh_area_at.close()
     # ** Uncomment this to make it work with the area of interest. 
     #    nc_file_reg = path_area_cdf_test 
@@ -465,7 +474,7 @@ if __name__ == '__main__':
     net_lst = ['rur', 'urb', 'mot']
     # list of fuels (**could be more properly called activities)
     fuel_lst = ['GSL', 'MD', 'GAS', 'LPG'] # 
-    nonfuels_lst = ['TYRE']
+    nonfuels_lst = ['TYRE', 'ABRASION','BRAKE']
 
     name_em_inv= 'em_inv'
     name_ser= 'ser'
