@@ -2,31 +2,34 @@
 """
 Created on Tue Dec  6 16:26:42 2016
 @author: peduzem
+
+Module to calculate the impact of measures
+
 INPUT:
-    netcdf/sherpaRiat-inerisEMI-pm25AQI-2010CLE.nc
-    nc_file_area = 'netcdf/netcdf_with_area/JRC01.nc
-    *todo* definition of measure implementation
-    red_ratio: reduction of service
-    or
+     *to be completed/updated*
+    Need to add an input directory with the following files:
+        input/sherpaRiat-inerisEMI-pm25AQI-2010CLE.nc : using it to get the values of lat and lon, will not be necessary in the future
+        input/population.mat: population file by Marco
+        # input/20151116_SR_no2_pm10_pm25/BC_conc_PM25_Y.nc' : base case concentration 
+        input/EMI_RED_ATLAS_NUTS0.nc: or NUTS1 to select the area of interest
+        input/JRC01.nc : area of each cell 
+        input/ef_reduction_sherpaeco : csv file with the reduction per sector/fuel (see example)
+        
+
 OUTPUT:
-    file of emission reductions by sector: input/sherpaeco_reduction.txt
-    netcdf with the YOLL gained from the measures
-    YOLL in the region of interest
-    YOLL elsewhere
+    *to be completed/updated*
+    input/sherpaeco_reduction.txt: file of emission reductions per macro sector 
+    Delta Years of Life Lost and Delta Mortality in the area of interest and elsewhere
+    deltayll_reg, deltayll_tot, delta_mort_tot, delta_mort_reg
     as for module1:
     netcdf with concentration changes per pollutant and cell
     delta emission netcdf with emission changes per precursor and cell
 ... (to be continued)
-Thre are three directories:
-    input:
-    workdir: working directory
-    output:
+
 """
 
 # imports
-# this is necessary because in py27 / is integer division
-# whereas in py3.5 / is float division! 
-from __future__ import division                                 
+                              
 # for importing matlab files
 import scipy.io as sio
 from PIL import Image
@@ -68,12 +71,12 @@ def load_obj(name ):
 def write_reductions(path_reduction_txt, red):
     """ 
     Function to write the reduction file, that is the percentage reduction 
-    per pollutant per macro sector. 
+    per pollutant per macrosector. 
     At the moment only for MS7 (**will be extended to the other sectors)
     
     Input:
-        - path_reduction_txt: path to the reduction file (from sherpa_globals)
-        - red: array with the reduction (>0) % per pollutant
+        - path_reduction_txt: path to the reduction file (** can be from sherpa_globals)
+        - red: array with the reduction (>0) % per pollutant (** the order is important)
     Output:
         - path_retduction_txt.txt: with the % reduction of pollutants of MS7
     
@@ -91,31 +94,45 @@ def write_reductions(path_reduction_txt, red):
 def calc_impacts(deltaconc, area_area):
 
     """
-    Methodology (used by Enrico in previous work, slightly modified, check with him**)
+    Health impacts of PM2.5
+    Methodology detailed in the REVIHAAP and HRAPIE studies led by WHO-Europe, as described in:
+    Holland, M., 2014. Cost-benefit Analysis of Final Policy Scenarios for the EU Clean Air Package Version. Version 2
+    
+    Concentration-Response-Function taken from the software from AirQ+ (WHO)
+    
+    Years of life loss as a function of mortality are calculated according to: 
     Anenberg, S.C. et al., 2010. Environmental Health Perspectives, 118(9),
     pp.1189–1195. Available at: http://ehp.niehs.nih.gov/0901220
     [Accessed December 13, 2016].
+    
+    Years of life loss as calculated as a function of life expectancy according to  
+    Holland, M., 2014. Cost-benefit Analysis of Final Policy Scenarios for the EU Clean Air Package Version. Version 2
+    
+    Data for baseline  population
+    ICD codes: ICD-10: A00-B99,C00-D48,D50-D89,E00-E88,F01-F99,G00-G98,
+    H00-H59,H60-H93,I00-I99,J00-J98,K00-K92,L00-L98,M00-M99,N00-N98,
+    O00-O99,P00-P96,Q00-Q99,R00-R99
+    Age: '30 - 85 +'									
+    Sex: Both									
+    http://data.euro.who.int/dmdb/
+    [Accessed December 13, 2016].
+     
     NB: Hereafter a positive delta means a reduction! 
     
+    
     Input:
-        - deaths: total deaths of population over 30
-        - pop: total population over 30
-        - pop30plus: distribution of population over 30
-        - pyll: potential years of life loss, PYLL per 100 000 -30+ average
-          EU28
-        - pm25_cle: current pollutant concentration (units**) 
-        ** will modify this to read directly module 1 output
-        - area_area: area of interest 
+        - area_area: area of interest (nc file with 100 in the cells of the area of interest)
+        - deltaconc: path to the file  with the delta concentrations (output of module1)
     Output: 
-        - deltayoll: delta yoll per grid cell 
-        - deltayll_reg, deltayoll_tot
+        - deltayll_reg, deltayll_tot, delta_mort_pp, delta_yll_pp
     
     @author: peduzem
     """  
+    
     # Load population file from Marco (treated in "regridPop" routine from Enrico).
     # The matlab file contains a structure called Anew,
     # I carried out the same operations as in Enrico's matlab file.
-    A = sio.loadmat('population.mat')
+    A = sio.loadmat('input/population.mat')
     Anew = A['Anew']
     Anew_T = Anew[np.newaxis]
     popall=np.fliplr(Anew_T)
@@ -123,20 +140,12 @@ def calc_impacts(deltaconc, area_area):
     # total pop according to Marco (all age groups)
     sumpop=np.sum(popall)
 
-    # Data for baseline  population
-    # ICD codes: ICD-10: A00-B99,C00-D48,D50-D89,E00-E88,F01-F99,G00-G98,
-    # H00-H59,H60-H93,I00-I99,J00-J98,K00-K92,L00-L98,M00-M99,N00-N98,
-    # O00-O99,P00-P96,Q00-Q99,R00-R99
-    # Age: '30 - 85 +'									
-    # Sex: Both									
-    # http://data.euro.who.int/dmdb/
-    # [Accessed December 13, 2016].
-    # Potential Years of life loss, PYLL per 100 000 -30+ average EU28
-    pyll = 4694.26465
-    # TOTAL POP above 30
+    # TOTAL population above 30 data.euro.who.int/dmdb/
     pop = 331923577
     # TOTAL DEATHS  above 30
     deaths = 4639244
+    # Potential Years of life loss, PYLL 30+ total in EU28
+    ylltot = 14038453.71
     
     # Distribution of the population over 30
     # HP: assuming it has the same distribution as all the population (as provided by Marco)
@@ -150,55 +159,95 @@ def calc_impacts(deltaconc, area_area):
     # Death rate over 30
     drate = deaths/pop
 
-    # Incidence rate (as calculated by Enrico, not used here)
-    # ir = pyll / 100000 * pop / deaths
-
     # crf derived by RR in Anenberg, S.C. et al., 2010. 
     # crf = 0.006
+ 
+    # crf Taken from AirQ+ (WHO)
+#    cutoff = 10 # microg/m3 # Taken from AirQ+ (WHO)
     beta = 0.006015392281974714 # Taken from AirQ+ (WHO)
-    # Delta mortality
-    #delta_mort = pm25_delta*crf*pop30plus*drate
-#    delta_mort = pm25_delta*crf*pop30plus*drate  
-    delta_mort = (1-(np.exp(-beta*pm25_delta)))*pop30plus*drate  
-    # Delat Years of life loss (yll) and months of life loss (mll).
-    delta_yll = delta_mort * pyll/100000 / drate
-#    yllsce = mortsce * pyll/100000 / drate
-    delta_moll = delta_yll *12 
-   
-    # Calculate delta moll and yll in the selected region
-    delta_moll_reg = np.sum(delta_moll * area_area / 100)
-    deltayll_reg = delta_moll_reg / 12
+#    baseconfile = 'input/20151116_SR_no2_pm10_pm25/BC_conc_PM25_Y.nc'
+#    fh_basecon = Dataset(baseconfile , mode='r')
+#    baseconc = fh_basecon.variables['conc'][:]
+#    fh_basecon.close()
+#    
+
+    # Delta mortality: uncomment the most suitable one
+    
+    # linear approximation
+    # delta_mort = pm25_delta*crf*pop30plus*drate
+#    # exponential approximation
+#    delta_mort = (1-(np.exp(-beta*pm25_delta)))*pop30plus*drate  
+    # formula with threshold, don't think it is necessary and I am not sure it is right**
+    # create and array of 1s where the condition is met, 0s elsewhere. 
+#    mask1 = (baseconc > cutoff).astype(int)
+#    mask2 = (baseconc-pm25_delta > cutoff).astype(int)  
+    delta_mort = (1-(np.exp(-beta*pm25_delta)))*pop30plus*drate
+    delta_mort_tot = np.sum(delta_mort)
+    delta_mort_reg = np.sum(delta_mort*area_area/100)
+    
+    # Delta Years of life loss (yll) according to Anenberg 2010
+    # delta_yll = delta_mort * ylltot / deaths
+    # ** I tried validating these values but I obtain very different results 
+    # from the ones in Holland, M., 2014. 
+    # 79.9 is the life expectancy, should be by country, this is the average from EUROSTAT 
+    # http://ec.europa.eu/eurostat/statistics-explained/images/9/93/Life_expectancy_at_birth%2C_1980%E2%80%932014_%28years%29_YB16.png
+    lyg = np.exp(8.161-(0.04478*79.9)) # life years gained per 100000 ppl for a unit concentration change
+    delta_yll= pm25_delta * lyg / 100000* pop30plus
+    # Calculate delta yll in the selected region
+    deltayll_reg = np.sum(delta_yll * area_area / 100)
     
     # Calculate delta moll and yll in total
-    deltamoll_tot = np.sum(delta_moll)
-    deltayoll_tot = deltamoll_tot / 12
+    deltayll_tot = np.sum(delta_yll)
     
     # Per person 
-    pop30_area= np.sum(pop30plus* area_area / 100)
-    deltayll_reg_pp = deltayll_reg/ pop30_area
-    deltayoll_tot_pp = deltayoll_tot / pop30_area
-    return delta_yll, deltayll_reg, deltayoll_tot, deltayll_reg_pp, deltayoll_tot_pp
+    delta_mort_pp=(1-(np.exp(-beta*pm25_delta)))*drate 
+    delta_yll_pp = delta_mort_pp * ylltot / deaths  
+    return deltayll_reg, deltayll_tot, delta_mort_tot, delta_mort_reg, delta_yll_pp
 # -----------------------------------------------------------------------------  
     
 def readinventories(m_sector, pollutant_lst, sector_lst, net, fuel_lst, nonfuels_lst, name_em_inv, name_ser, name_act):
-        # initialiaze arrays
-    emi = {} # gridded emissions (Marcos units)
+    """
+    
+    Calculate the energy use activity level starting from the CO2 emission inventory
+    Activity in PJ for each sector-fuel combination in Marcos inventory
+    I am calculating it from the CO2 because emissions are directly
+    proportional to the fuel consumption (only ttw emissions), 
+    this means that there is the same emission factor for all countries
+    apart from france and the united kingdom (I don't know why)
+    ** the different emission factors for F and UK should be taken into account  
+         
+    Calculate the service activity level starting from the PM10-TYRE emission inventory
+    Activity in Gvkm for each sector in Marcos inventory
+    I am calculating it from the PM10-TYRE because emission factors
+    are the same for for all countries in the EU (though they are different for 
+    other countries and I don't know why)
+    
+    Calculate the reference emission factors and emission ivnentories, 
+    for each pollutant, sector, fuel combination from Marco's inventories    
+    INPUT:      
+        m_sector = 7 # macro sector, SNAP # 7: road transport 
+        pollutant_lst = ['NH3','NOx','VOC', 'SO2', 'PM10'] # List of pollutants of interest    
+        sector_lst = ['TRA_RD_LD4C','TRA_RD_HDB','TRA_RD_LD2','TRA_RD_LD4T','TRA_RD_HDT','TRA_RD_M4' ]# List of subsectors of the m_sector
+        net_lst = ['rur', 'urb', 'mot']  
+        fuel_lst = ['GSL', 'MD', 'GAS', 'LPG'] # list of fuels (**could be more properly called activities)
+        nonfuels_lst = ['TYRE', 'ABRASION','BRAKE'] # activities that are not fuels
+        name_em_inv= 'em_inv' name of python binary file to save results 
+        name_ser= 'ser' name of python binary file to save results
+        name_act= 'act' name of python binary file to save results
+
+    
+    @author: peduzem
+    """
+    
+    # initialiaze arrays
+    emi = {} # gridded emissions to calculate activity and service
     em_inv ={} # emission inventory (Marco)
     act = {} # activity [PJ] gridded
     ser = {} # service [Mvkm]
 
-    # -------------------------------------------------------------------------
-    # calculate the energy use activity level starting from the CO2 emission inventory
-    # Activity in PJ for each sector-fuel combination in Marcos inventory
-    # I am calculating it from the CO2 because emissions are directly
-    # proportional to the fuel consumption (only ttw emissions), 
-    # this means that there is the same emission factor for all countries
-    # apart from france and the united kingdom (I don't know why)
-    # ** the different emission factors for F and UK should be taken into account  
-   
+    # -------------------------------------------------------------------------    
+    #Calculate the energy use activity level starting from the CO2 emission inventory
     # emission factor ttw for CO2
-#    emfco2 = 66219.992 # ton/PJ
-
     emfco2={}
     emfco2['GSL']= 66219.9916000 # ton/PJ
     emfco2['MD']= 68571.3810000 # ton/PJ
@@ -254,12 +303,8 @@ def readinventories(m_sector, pollutant_lst, sector_lst, net, fuel_lst, nonfuels
                 act[sector].pop(fuel, None)
     
     # -------------------------------------------------------------------------       
-    # calculate the service activity level starting from the PM10-TYRE emission inventory
-    # Activity in Gvkm for each sector in Marcos inventory
-    # I am calculating it from the PM10-TYRE because emission factors
-    # are the same for for all countries in the EU (though they are different for 
-    # other countries and I don't know why)
-    # ** the different emission factors for F and UK should be taken into account       
+    # Calculate the service activity level starting from the PM10-TYRE emission inventory
+ 
     emi['PM10'] = {}
     emftyre = {}
     # emission factors ttw for PM10 for the different sectors (for tyre)
@@ -313,20 +358,15 @@ def readinventories(m_sector, pollutant_lst, sector_lst, net, fuel_lst, nonfuels
     # -------------------------------------------------------------------------        
     # Calculate the reference emission factors and emission ivnentories, 
     # for each pollutant, sector, fuel combination (from Marco's data)
-    # 
-    #emi={}
+ 
     for pollutant in pollutant_lst: 
         #emi[pollutant] = {}
         em_inv[pollutant]={}                  
         for sector in sector_lst: 
             # initialize arrays
             em_inv[pollutant][sector] = {} 
-
-            #emi[pollutant][sector] = {}    
             for fuel in fuel_lst:
                 # initialize arrays
-                #emi[pollutant][sector][fuel] = {}
-                #emi[pollutant][sector][fuel][net] = {} 
                 em_inv[pollutant][sector][fuel] = {}
                 for net in net_lst:
                     em_inv[pollutant][sector][fuel][net] = {}               
@@ -358,10 +398,7 @@ def readinventories(m_sector, pollutant_lst, sector_lst, net, fuel_lst, nonfuels
                         #em_inv[pollutant][sector][fuel][net] = emi[pollutant][sector][fuel][net] * 1000  # ton
                     except(RuntimeError, AttributeError):
                         # Like this I remove the arrays that would be empty
-                        #emi[pollutant][sector][fuel].pop(net, None)
-                        #emi[pollutant][sector].pop(fuel, None)
                         em_inv[pollutant][sector][fuel].pop(net, None)
-#                        em_inv[pollutant][sector].pop(fuel, None)  
                         pass
                 if not em_inv[pollutant][sector][fuel]: 
                     em_inv[pollutant][sector].pop(fuel, None)
@@ -371,32 +408,31 @@ def readinventories(m_sector, pollutant_lst, sector_lst, net, fuel_lst, nonfuels
     save_obj((ser), name_ser)
  
     return
-
+# ------------------------------------------------------------------------- 
 # main program starts here
+# ------------------------------------------------------------------------- 
+
 if __name__ == '__main__':
     
     # -------------------------------------------------------------------------
-    # Preparing the data (**will be translated to a def)
+    # Preparing the input data
     # -------------------------------------------------------------------------
 
-    # open 2010 CLE and read PM2.5 concentration values
-    # ** this is not in the input directory on svn
-    # file with the CLE concentrations, this will not be necessary in the future
-    # I need it only to load lons and lats are used later. 
-    nc_file = 'netcdf/sherpaRiat-inerisEMI-pm25AQI-2010CLE.nc'
+#    # open 2010 CLE and read PM2.5 concentration values
+#    # file with the CLE concentrations, this will not be necessary in the future
+#    # I need it only to load lons and lats which are used later. 
+     # ** there has to be a better way to do this
+    nc_file = 'input/sherpaRiat-inerisEMI-pm25AQI-2010CLE.nc'
     fh = Dataset(nc_file, mode='r')
     lons = fh.variables['lon'][:]
     lats = fh.variables['lat'][:]
     pm25_cle = fh.variables['PM25'][:]
     pm25_units_cle = fh.variables['PM25'].units
     fh.close()  
-
-   
            
        
     # Area of each cell in the domain    
-    # ** this is not in the input folder, has to be added
-    nc_area = 'netcdf/netcdf_with_area/JRC01.nc'
+    nc_area = 'input/JRC01.nc'
     # ** this is not in the directory on svn
     fh_area = Dataset(nc_area, mode='r')
     area = fh_area.variables['surface'][:]
@@ -407,8 +443,8 @@ if __name__ == '__main__':
     
     
     # open area of interest selarea = selected area
-    # This is just to check data with Austria (0), comment to consider the area of 
-    # interest (see below), Italy (16), NUTS1 - ile de france (41)
+    # This is just to check data with Austria (0), Italy (16) comment to consider the area of 
+    # interest already defined(see below), NUTS1 - ile de france (41)
 #    nc_file_at = 'input/EMI_RED_ATLAS_NUTS1.nc'
     nc_file_at = 'input/EMI_RED_ATLAS_NUTS0.nc'
     fh_area_at = Dataset(nc_file_at, mode='r')
@@ -461,7 +497,6 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
     # Take marco's .tif files and build corresponding arrays with the information on the 
     # pollutants - sector - activity - network
-    # will become a function
     
     # -------------------------------------------------------------------------
     # Input parameters
@@ -473,7 +508,7 @@ if __name__ == '__main__':
     # network (** at the moment only 'all' but can be extended)
     net_lst = ['rur', 'urb', 'mot']
     # list of fuels (**could be more properly called activities)
-    fuel_lst = ['GSL', 'MD', 'GAS', 'LPG'] # 
+    fuel_lst = ['GSL', 'MD', 'GAS','LPG','TYRE'] # 
     nonfuels_lst = ['TYRE', 'ABRASION','BRAKE']
 
     name_em_inv= 'em_inv'
@@ -582,21 +617,22 @@ if __name__ == '__main__':
                     ef = ef_inv[pollutant][sector][fuel][net] *(1 - df.loc[pollutant,fuel][sector])
                     if fuel not in nonfuels_lst:
                         em_new[pollutant][sector][fuel][net] = act_tot[sector][fuel][net] * ef
-                        a = em_new[pollutant][sector][fuel][net] - em_tot[pollutant][sector][fuel][net]
-                        print(a, pollutant, sector, fuel, net)
+#                        a = em_new[pollutant][sector][fuel][net] - em_tot[pollutant][sector][fuel][net]
+#                        print(a, pollutant, sector, fuel, net)
                     else:
                         em_new[pollutant][sector][fuel][net] = ser_tot[sector][net] * ef
-                        a = em_new[pollutant][sector][fuel][net] - em_tot[pollutant][sector][fuel][net]
-                        print(a, pollutant, sector, fuel, net)
+#                        a = em_new[pollutant][sector][fuel][net] - em_tot[pollutant][sector][fuel][net]
+#                        print(a, pollutant, sector, fuel, net)
                         
     # -------------------------------------------------------------------------
     # Running module1 
     # -------------------------------------------------------------------------
                     
-
+    em_new_sum={}
+    em_tot_sum={}
     for pollutant in pollutant_lst: 
-        em_new[pollutant] = np.sum(np.sum(np.sum(em_new[pollutant][sector][fuel][net] for net in em_new[pollutant][sector][fuel]) for fuel in em_new[pollutant][sector]) for sector in em_new[pollutant])
-        em_tot[pollutant] = np.sum(np.sum(np.sum(em_tot[pollutant][sector][fuel][net] for net in em_tot[pollutant][sector][fuel]) for fuel in em_tot[pollutant][sector]) for sector in em_tot[pollutant])
+        em_new_sum[pollutant] = np.sum(np.sum(np.sum(em_new[pollutant][sector][fuel][net] for net in em_new[pollutant][sector][fuel]) for fuel in em_new[pollutant][sector]) for sector in em_new[pollutant])
+        em_tot_sum[pollutant] = np.sum(np.sum(np.sum(em_tot[pollutant][sector][fuel][net] for net in em_tot[pollutant][sector][fuel]) for fuel in em_tot[pollutant][sector]) for sector in em_tot[pollutant])
     
 #    checkdif={}   
     for precursor in precursor_lst: 
@@ -604,16 +640,16 @@ if __name__ == '__main__':
 #        checkdif[precursor]={}
         for pollutant in pollutant_lst:
             if pollutant == precursor:
-                red[precursor] = (em_tot[pollutant]-em_new[pollutant])/em_bc[precursor,m_sector-1]*100
+                red[precursor] = (em_tot_sum[pollutant]-em_new_sum[pollutant])/em_bc[precursor,m_sector-1]*100
 #                checkdif[precursor]=(em_tot[pollutant]-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
         if precursor == 'NMVOC':
-                red[precursor] = (em_tot['VOC']-em_new['VOC'])/em_bc[precursor,m_sector-1]*100
+                red[precursor] = (em_tot_sum['VOC']-em_new_sum['VOC'])/em_bc[precursor,m_sector-1]*100
 #                checkdif[precursor]=(em_tot['VOC']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
         if precursor == 'SOx': 
-                red[precursor] = (em_tot['SO2']-em_new['SO2'])/em_bc[precursor,m_sector-1]*100
+                red[precursor] = (em_tot_sum['SO2']-em_new_sum['SO2'])/em_bc[precursor,m_sector-1]*100
 #                checkdif[precursor]=(em_tot['SO2']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
         if precursor == 'PPM':
-                red[precursor] = (em_tot['PM10']-em_new['PM10'])/em_bc[precursor,m_sector-1]*100
+                red[precursor] = (em_tot_sum['PM10']-em_new_sum['PM10'])/em_bc[precursor,m_sector-1]*100
 #                checkdif[precursor]=(em_tot['PM10']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
 
 #                
@@ -625,7 +661,7 @@ if __name__ == '__main__':
 
     reductions = {}
     reductions[m_sector-1]={}
-#                         NOx	     NMVOC      NH3        PPM        SOx
+#                                   NOx	        NMVOC       NH3           PPM        SOx
     reductions[m_sector-1] = [red['NOx'], red['NMVOC'], red['NH3'] , red['PPM'], red['SOx']]
     path_reduction_txt='input/sherpaeco_reduction.txt'
     write_reductions(path_reduction_txt, reductions[m_sector-1])
@@ -647,302 +683,13 @@ if __name__ == '__main__':
     print('Module 1 run time: %s sec.' % (stop-start))
     remove(proglog_filename)
    
-    # -------------------------------------------------------------------------
-    # (Cost) Benefit Analysis 
-    # -------------------------------------------------------------------------
-
+#     -------------------------------------------------------------------------
+#     (Cost) Benefit Analysis 
+#     -------------------------------------------------------------------------
 
     deltaconc='output/delta_concentration.nc'
-    deltayoll, deltayll_reg, deltayoll_tot, deltayll_reg_pp, deltayoll_tot_pp = calc_impacts(deltaconc, area_area)
+    deltayll_reg, deltayll_tot, delta_mort_tot, delta_mort_reg, delta_yll_pp = calc_impacts(deltaconc, area_area)
 ##    
-#    # -------------------------------------------------------------------------
-#    # Output of results (todo)
-#    # -------------------------------------------------------------------------
-#    
-##    # create new netcdf file for results
-#    nc_file3 = 'netcdf/mollAQI-2010CLEtrial.nc'
-#    fh_sce_moll = Dataset(nc_file3, mode='w')
-#    fh_sce_moll.createDimension('time', 1)
-#    fh_sce_moll.createDimension('y', 448)
-#    fh_sce_moll.createDimension('x', 384)
-#    time = fh_sce_moll.createVariable('time', 'f8', ('time'))
-#    latitude = fh_sce_moll.createVariable('lat', 'f4', ('y', 'x'))
-#    longitude = fh_sce_moll.createVariable('lon', 'f4', ('y', 'x'))
-#    moll = fh_sce_moll.createVariable('moll', 'f4', ('time', 'y', 'x'))
-#    fh_sce_moll.variables['moll'].units = 'months'
-#    fh_sce_moll.variables['moll'].long_name = 'Months of lost lives'
-#    longitude[:] = lons
-#    latitude[:] = lats
-#    time[:] = 2.0091231958333332E7
-#    moll[:] = area_area
-#    fh_sce_moll.close()
-#    # create new netcdf file for results
-#    nc_file4 = 'netcdf/test.nc'
-#    fh_pop30plus = Dataset(nc_file4, mode='w')
-#    fh_pop30plus.createDimension('time', 1)
-#    fh_pop30plus.createDimension('y', 448)
-#    fh_pop30plus.createDimension('x', 384)
-#    time = fh_pop30plus.createVariable('time', 'f8', ('time'))
-#    latitude = fh_pop30plus.createVariable('lat', 'f4', ('y', 'x'))
-#    longitude = fh_pop30plus.createVariable('lon', 'f4', ('y', 'x'))
-#    pops = fh_pop30plus.createVariable('area_austria', 'f4', ('time', 'y', 'x'))
-#    fh_pop30plus.variables['area_austria'].units = 'test'
-#    fh_pop30plus.variables['area_austria'].long_name = 'test'
-#    longitude[:] = lons
-#    latitude[:] = lats
-#    time[:] = 2.0091231958333332E7
-#    pops[:] =   area_area
-#    fh_pop30plus.close()
-#    # Get some parameters for the Stereographic Projection
-##    lon_0 = lons.mean()
-##    lat_0 = lats.mean()
-###    
-###    # setup stereographic basemap.
-###    # lat_ts is latitude of true scale.
-###    # lon_0,lat_0 is central point.
-##    check = Aco2new-Afinal
-##    m = Basemap(width=5000000, height=4500000,
-##                resolution='l', projection='stere',
-##                lat_ts=40, lat_0=lat_0, lon_0=lon_0)
-##    m.drawcoastlines()
-##    xi, yi = m(lons, lats)
-##    
-##    cs = m.pcolor(xi, yi, np.squeeze(Aco2new), vmin=0, vmax=0.01)
-##    cbar = m.colorbar(cs, location='bottom', pad="10%")
-##    
-##    plt.title("PM2.5")
-##    plt.savefig('pm25.png')
-##    plt.show()
-##    
-###    lon_0 = lonsmtif.mean()
-###    lat_0 = latsmtif.mean()
-##    m2 = Basemap(width=5000000, height=4500000,
-##                 resolution='l', projection='stere',
-##                 lat_ts=40, lat_0=lat_0, lon_0=lon_0)
-##    m2.drawcoastlines()
-###    xi, yi = m2(X, Y)
-##    xi, yi = m(lons, lats)
-##    cs = m2.pcolor(xi, yi, np.squeeze(check), vmin=0, vmax=0.00000000001)
-##    cbar = m2.colorbar(cs, location='bottom', pad="10%")
-##    plt.title("population")
-##    
-#    #
-#    #
-#    #plt.savefig('moll.png')
-##    plt.show()
-##    pass
-##           A = sio.loadmat('co2.mat')
-##            Aco2 = A['Amine']
-##            Aco2_T = Aco2[np.newaxis]
-##            Aco2new=np.fliplr(Aco2_T)  
-#  # Comparisong with the data from TREMOVE for Austria
-#           
-#            # Austria, TREMOVE, M7 (all road transport) vs SHERPA vs Marco
-#            # Activity 221.679  vs ... vs 316 [PJ]
-#            # NMVOC 12210 [Mg] vs 14457 
-#            # SOX 104 [Mg] vs 144
-#            # NOX 61488 [Mg] vs 107133
-#            # PPM 2112+707 vs 5174
-#        
-#            # For Austria, GSL PC from Marco
-#            # activity 71.33405959 PJ for GLS PC (Marco) 
-#            # 0.225 is the ratio between the acticity of PC (GSL) and M7 (Marco) 316 PJ
-#            # 87.346743 is the emission factor for nmvoc [ton/PJ] GLS PC (Marco)  
-#            # 101.161882 is the emission factor for NOx [ton/PJ] GLS PC (Marco) 
-#            # 0.584308195 for PM2.5, 0.584308195 for PM10 [ton/PJ] GLS PC (Marco) 
-#            # 0.434782609 for SO2/SOx [ton/PJ] GLS PC (Marco) 
-#            # 24.55769089 for NH3 [ton/PJ]
-#            # 66219.992 for CO2 (ttw I think) [ton/PJ]
-#            
-#
-#    #    nc_marco = '7km_eur_TRA_RD_LD4C_GSL_Mall.nc'
-#    #    fh_marco = Dataset(nc_marco, mode='r')
-#    #    CO2_TRA_RD_LD4C_GSL_Mall = fh_marco.variables['7km_eur_TRA_RD_LD4C_GSL_Mall.tif.tif'][:]
-#    #    lonsm = fh_marco.variables['lon'][:]
-#    #    latsm = fh_marco.variables['lat'][:]
-#    #    X, Y = np.meshgrid(lonsm , latsm)
-#    #    fh_marco.close()
-#        
-#    # Open Marco's tif files and write the information in an array   
-##    ds   = gdal.Open('CO2_emiss/7km_eur_TRA_RD_LD4C_GSL_Mall.tif.tif')
-##    arr    = ds.ReadAsArray()
-##    [cols,rows] = arr.shape
-##    (Xarr, deltaX, rotation, Yarr, rotation, deltaY) = ds.GetGeoTransform()
-##    CO2_TRA_RD_LD4C_GSL_Mall = np.array(ds.GetRasterBand(1).ReadAsArray())
-##    ds = None    
-#            
-#            
-##    
-##    # An example with a low emission zone:                                       
-##                                      
-###    # total service activity for PC (GSL,MD) in the area of interest   
-###    area_tot_act_7pc = np.sum(act_den_7pc * area_cell *area_area / 100)  # [PJ]
-###    area_tot_ser_7pc= np.sum(ser_den_7pc * area_area * area_cell / 100)
-##    ser_tot_sce = {}
-##
-##    # Case 1) Total activity is reduced by 20 % in the area of interest.
-##    red_ratio = 0.2  
-##    ser_tot_sce[m_sector-1,sector] = ser_tot[m_sector-1,sector] * (1-red_ratio)
-##    red_on_MS = (ser_tot[m_sector-1, sector]-ser_tot_sce[m_sector-1,sector])/ ser_tot[m_sector-1] * 100
-##    
-##    red={}
-##    #                  NOx	     NMVOC      NH3        PPM        SOx
-##    red[m_sector-1] = [red_on_MS, red_on_MS, 0  , red_on_MS, red_on_MS]
-##    path_reduction_txt='input/sherpaeco_reduction.txt'
-##    write_reductions(path_reduction_txt, red[m_sector-1])
-##
-##    # Case 2) Substitute mobility service and or increase p/v
-##    occ = 1.65  # average accupancy for passenger cars.
-##    # Data from TREMOVE show slighlty different occ
-##    # Here the average value is assumed
-##    newocc = 1.65  # p/v
-##    m.av_gsl_pc_eu5.occ = newocc  # p/v
-##    m.av_dsl_pc_eu6.occ = newocc  # p/v
-##    dis_den[m_sector-1,sector] = ser_den[m_sector-1,sector] * newocc # Mpkm/km2 
-##    dis_tot[m_sector-1,sector] = np.sum(dis_den[m_sector-1,sector]* area_cell * area_area /100)  # [Mvkm])
-##    tot_sub_ratio = 1  # fraction of mobility substituted in the area
-##    gsl_sub_ratio = tot_sub_ratio * 0.7  # fraction of tot_sub_ratio substituted with gsl
-##    dsl_sub_ratio = tot_sub_ratio - gsl_sub_ratio 
-##    gsl_ser = ser_tot[m_sector-1,sector] * tot_sub_ratio * gsl_sub_ratio  # Mpkm
-##    dsl_ser = ser_tot[m_sector-1,sector] * tot_sub_ratio * dsl_sub_ratio  # Mpkm
-##    gsl_dist = dis_tot[m_sector-1,sector] * tot_sub_ratio * gsl_sub_ratio  # Mvkm
-##    dsl_dist = dis_tot[m_sector-1,sector] * tot_sub_ratio * dsl_sub_ratio  # Mvkm
-##    gsl_act = gsl_ser / m.av_gsl_pc_eu5.service_eff()  # PJ
-##    dsl_act = dsl_ser / m.av_dsl_pc_eu6.service_eff()  # PJ
-##    
-##    gls_em = {}
-##    for k in m.av_gsl_pc_eu5.emf:
-##        if k is 'PPM_nex':
-##            gls_em[k] =  m.av_gsl_pc_eu5.emf[k]*gsl_dist
-##        else: 
-##            gls_em[k] = m.av_gsl_pc_eu5.emf[k]*gsl_act
-##    
-##    dsl_em = {}
-##    for k in m.av_dsl_pc_eu6.emf:
-##        if k is 'PPM_nex':
-##            dsl_em[k] =  m.av_dsl_pc_eu6.emf[k]*gsl_dist
-##        else: 
-##            dsl_em[k] = m.av_dsl_pc_eu6.emf[k]*gsl_act
-##    
-##    new_em={}
-##    for k in m.av_gsl_pc_eu5.emf:    
-##        #for precursor in precursor_lst:
-##        for precursor in precursor_lst:
-##            if k in precursor_lst:
-##                new_em[k]=gls_em[k]+dsl_em[k]
-##            elif k is 'CO2_wtw':
-##                new_em[k]=gls_em['CO2_wtw']+dsl_em['CO2_wtw']
-##            elif k is 'PPM_nex':
-##                new_em['PPM']=gls_em['PPM_nex']+gls_em['PPM_ex']+dsl_em['PPM_nex']+dsl_em['PPM_ex']
-##            
-##    finalpre_lst = ['NMVOC','NOx','PPM','SOx']
-##
-##    red = {}
-##
-##    ## start again from here, data needs to be more detailed to make sense. 
-##    for finalprecursor in finalpre_lst:    
-##        red[finalprecursor]= ((em_tot[finalprecursor,m_sector-1]*0.63- new_em[finalprecursor])/em_tot[finalprecursor,m_sector-1])*100
-##    redPPM =   ((tot_em_ppm_7/area_tot_act_7)*(gsl_act+dsl_act)-(gsl_em_ppm+dsl_em_ppm)) / tot_em_ppm_7 * 100
-#
-##    # Case 3) Increase PC
-#    
-#    # Definition of measures and technologies 
-##import measures as m
- 
-
-
-                    
-        
-#                
-#                    # Emissions of the sector-fuel combination in Marcos inventory
-#                    
-##                        em_inv[pollutant][sector][fuel][net] = np.sum(emi[pollutant][sector][fuel][net]* area_area / 100) * 1000  # ton   
-#                        em_inv[pollutant][sector][fuel][net] = emi[pollutant][sector][fuel][net] * 1000  # ton
-##                        if fuel in nonfuels_lst:
-##                            ef_inv[pollutant][sector][fuel][net] = sumo over fuels em_inv[pollutant][sector][fuel][net]/ser[sector][net]
-#                        if fuel not in nonfuels_lst:
-#                            
-#                    except RuntimeError, err:
-#                        pass
-
-                
-                # if the array is empty write zero (**there's probably a better way to do this so that I can do the sum below)
-#                if not em_inv[pollutant][sector][fuel][net]:
-#                    em_inv[pollutant][sector][fuel][net]=0.0
-#    # write data in array 
-#    for pollutant in pollutant_lst: 
-#        em_inv[pollutant] = np.sum(np.sum(em_inv[pollutant][sector][fuel][net] for fuel in fuel_lst ) for sector in sector_lst)
-##    # -------------------------------------------------------------------------
-##    # Comparisons
-##    # -------------------------------------------------------------------------
-##    ## check cost benefit analysis  
-##    ## compared values to Table A.4.6
-##    ##  2014Holland-Cost-benefit Analysis of Final Policy Scenarios - corresponding to TSAP11
-##    # open area of interest selarea = selected area
-##    # This is just to check data with Austria (0), 
-#    nc_file_at = 'input/EMI_RED_ATLAS_NUTS0.nc'
-#    fh_area_at = Dataset(nc_file_at, mode='r')
-#    area_area = fh_area_at.variables['AREA'][0][:] 
-#    fh_area_at.close()
-#    
-#    nc_file2 = 'netcdf/sherpaRiat-inerisEMI-pm25AQI-2030MFR.nc'
-#    fh = Dataset(nc_file2, mode='r')
-#    lons = fh.variables['lon'][:]
-#    lats = fh.variables['lat'][:]
-#    pm25_mfr = fh.variables['PM25'][:]
-#    pm25_units_mfr = fh.variables['PM25'].units
-#    fh.close()   
-#    deltaPM25 = pm25_cle - pm25_mfr
-#    A = sio.loadmat('population.mat')
-#    Anew = A['Anew']
-#    Anew_T = Anew[np.newaxis]
-#    popall=np.fliplr(Anew_T)
-#    
-#    # total pop according to Marco (all age groups)
-#    sumpop=np.sum(popall)
-#
-#    # Data for baseline  population
-#    # ICD codes: ICD-10: A00-B99,C00-D48,D50-D89,E00-E88,F01-F99,G00-G98,
-#    # H00-H59,H60-H93,I00-I99,J00-J98,K00-K92,L00-L98,M00-M99,N00-N98,
-#    # O00-O99,P00-P96,Q00-Q99,R00-R99
-#    # Age: '30 - 85 +'									
-#    # Sex: Both									
-#    # http://data.euro.who.int/dmdb/
-#    # [Accessed December 13, 2016].
-#    # Potential Years of life loss, PYLL per 100 000 -30+ average EU28
-#    pyll = 4694.26465
-#    # TOTAL POP above 30
-#    pop = 331923577
-#    # TOTAL DEATHS  above 30
-#    deaths = 4639244
-#    
-#    # Distribution of the population over 30
-#    # HP: assuming it has the same distribution as all the population (as provided by Marco)
-#    pop30plus = (popall/sumpop) * pop 
-#
-#    # open delta concentration for PM25 - result of module1
-#
-#    # Death rate over 30
-#    drate = deaths/pop
-#
-#    # Incidence rate (as calculated by Enrico, not used here)
-#    # ir = pyll / 100000 * pop / deaths
-#
-#    # crf derived by RR in Anenberg, S.C. et al., 2010. 
-#    crf = 0.006
-#
-#    # Delta mortality
-#    delta_mort = deltaPM25*crf*pop30plus*drate
-#        
-#    # Delat Years of life loss (yll) and months of life loss (mll).
-#    delta_yll = delta_mort * pyll/100000 / drate
-##    yllsce = mortsce * pyll/100000 / drate
-#    delta_moll = delta_yll *12 
-#   
-#    # Calculate delta moll and yll in the selected region
-#    delta_moll_reg = np.sum(delta_moll * area_area / 100)
-#    deltayll_reg = delta_moll_reg / 12
-#    
-#    # Calculate delta moll and yll in total
-#    deltamoll_tot = np.sum(delta_moll)
-#    deltayoll_tot = deltamoll_tot / 12
+    # -------------------------------------------------------------------------
+    # Output of results (todo)
+    # -------------------------------------------------------------------------
