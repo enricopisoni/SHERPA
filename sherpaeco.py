@@ -33,17 +33,10 @@ OUTPUT:
 # for importing matlab files
 import scipy.io as sio
 from PIL import Image
-# gdal package to hanlde tiff, because of this package I had to switch to 
-# python 2.7 
 from osgeo import gdal, osr #conda install -c conda-forge gdal
-# from pyGTiff import geotiff
 from gdalconst import *
-# math
-# from numpy import lib, zeros, sum, power, ones
-# for using netCDF files
-from netCDF4 import Dataset
-# for scientific operators
-import numpy as np
+from netCDF4 import Dataset # for using netCDF files
+import numpy as np # for scientific operators
 # for plotting
 from mpl_toolkits.basemap import Basemap  #conda install -c conda-forge basemap
 import matplotlib.pyplot as plt
@@ -52,6 +45,7 @@ from sherpa_globals import path_area_cdf_test, path_model_cdf_test, path_emissio
 # Definition of measures and technologies 
 #import measures as m
 import module1 as shrp
+import module1ema as shrp1
 from time import time  # for module1
 from os import remove  # for module1
 import pandas as pd # conda install pandas
@@ -427,6 +421,14 @@ if __name__ == '__main__':
     lons = fh.variables['lon'][:]
     lats = fh.variables['lat'][:]
     pm25_cle = fh.variables['PM25'][:]
+    conc_dict={}
+    conc_dict['PM25'] = fh.variables['PM25'][:, :, :]
+    # get snap, longitude and latitude arrays from emission file
+    lon_array = fh.variables['lon'][:]
+    lat_array = fh.variables['lat'][:]
+#    emission_dict['Nsnaps'] = snap_array
+    conc_dict['lon_array'] = lon_array
+    conc_dict['lat_array'] = lat_array  
     pm25_units_cle = fh.variables['PM25'].units
     fh.close()  
            
@@ -446,9 +448,9 @@ if __name__ == '__main__':
     # This is just to check data with Austria (0), Italy (16) comment to consider the area of 
     # interest already defined(see below), NUTS1 - ile de france (41)
 #    nc_file_at = 'input/EMI_RED_ATLAS_NUTS1.nc'
-    nc_file_at = 'input/EMI_RED_ATLAS_NUTS0.nc'
+    nc_file_at = 'input/EMI_RED_ATLAS_NUTS1.nc'
     fh_area_at = Dataset(nc_file_at, mode='r')
-    area_area = fh_area_at.variables['AREA'][0][:] 
+    area_area = fh_area_at.variables['AREA'][41][:] 
     fh_area_at.close()
     # ** Uncomment this to make it work with the area of interest. 
     #    nc_file_reg = path_area_cdf_test 
@@ -473,25 +475,6 @@ if __name__ == '__main__':
     selarea[:] = area_area
     fh_selarea.close()
 
-    # open a file from Marco in order to extract the data to adapt the grid
-    # be careful the values will be used later
-    ds   = gdal.Open('CO2_emiss/7km_eur_TRA_RD_LD4C_GSL_Mall.tif.tif')
-    arr    = ds.ReadAsArray()
-    [cols,rows] = arr.shape
-    (Xarr, deltaX, rotation, Yarr, rotation, deltaY) = ds.GetGeoTransform()
-    ds = None   
-    # Define longitude and latitude for the data
-    longl = []
-    for i in range(0, rows): 
-        longl.append(Xarr + i*deltaX + deltaX*0.5)
-    lonsmtif=np.array(longl)
-    latl = []
-    for i in range(0, cols): 
-        latl.append(Yarr + i*deltaY + deltaY*0.5)
-    latsmtif=np.array(latl)
-    X, Y = np.meshgrid(lonsmtif , latsmtif)
-
-
     # -------------------------------------------------------------------------
     # Rading data from Marco's inventory files
     # -------------------------------------------------------------------------
@@ -508,8 +491,8 @@ if __name__ == '__main__':
     # network (** at the moment only 'all' but can be extended)
     net_lst = ['rur', 'urb', 'mot']
     # list of fuels (**could be more properly called activities)
-    fuel_lst = ['GSL', 'MD', 'GAS','LPG','TYRE'] # 
-    nonfuels_lst = ['TYRE', 'ABRASION','BRAKE']
+    fuel_lst = ['GSL', 'MD', 'GAS','LPG', 'TYRE'] # 
+    nonfuels_lst = ['TYRE'] #, 'ABRASION','BRAKE'S
 
     name_em_inv= 'em_inv'
     name_ser= 'ser'
@@ -517,7 +500,7 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
     
     # uncomment to read inventories from Marco
-    readinventories(m_sector, pollutant_lst, sector_lst, net_lst, fuel_lst, nonfuels_lst, name_em_inv, name_ser, name_act)
+#    readinventories(m_sector, pollutant_lst, sector_lst, net_lst, fuel_lst, nonfuels_lst, name_em_inv, name_ser, name_act)
     
       
     # -------------------------------------------------------------------------
@@ -574,17 +557,17 @@ if __name__ == '__main__':
                     ef_inv[pollutant][sector][fuel][net] = {}
                     em_tot[pollutant][sector][fuel][net] = {}
                     if fuel not in nonfuels_lst:                   
-                        em_tot[pollutant][sector][fuel][net] = np.sum(em_inv[pollutant][sector][fuel][net] * area_area / 100) 
+                        em_tot[pollutant][sector][fuel][net] = em_inv[pollutant][sector][fuel][net] * area_area / 100 
                         if act_tot[sector][fuel][net] == 0:
                             ef_inv[pollutant][sector][fuel][net]=0
                         else:                             
-                            ef_inv[pollutant][sector][fuel][net] = em_tot[pollutant][sector][fuel][net]/act_tot[sector][fuel][net]
+                            ef_inv[pollutant][sector][fuel][net] = np.sum(em_tot[pollutant][sector][fuel][net])/act_tot[sector][fuel][net]
                     if fuel in nonfuels_lst:                            
-                        em_tot[pollutant][sector][fuel][net] = np.sum(em_inv[pollutant][sector][fuel][net] * area_area / 100)
+                        em_tot[pollutant][sector][fuel][net] = em_inv[pollutant][sector][fuel][net] * area_area / 100
                         if ser_tot[sector][net]== 0:
                             ef_inv[pollutant][sector][fuel][net]=0
                         else:
-                            ef_inv[pollutant][sector][fuel][net] = em_tot[pollutant][sector][fuel][net]/ser_tot[sector][net]
+                            ef_inv[pollutant][sector][fuel][net] = np.sum(em_tot[pollutant][sector][fuel][net])/ser_tot[sector][net]
 
     # technical measures                      
     # New emission factors after the implementation of measures:
@@ -616,43 +599,81 @@ if __name__ == '__main__':
                     em_new[pollutant][sector][fuel][net] = {}
                     ef = ef_inv[pollutant][sector][fuel][net] *(1 - df.loc[pollutant,fuel][sector])
                     if fuel not in nonfuels_lst:
-                        em_new[pollutant][sector][fuel][net] = act_tot[sector][fuel][net] * ef
-#                        a = em_new[pollutant][sector][fuel][net] - em_tot[pollutant][sector][fuel][net]
-#                        print(a, pollutant, sector, fuel, net)
+                        em_new[pollutant][sector][fuel][net] = (act[sector][fuel][net] * ef * area_area / 100)
+                        a = (np.sum(em_new[pollutant][sector][fuel][net]) - np.sum(em_tot[pollutant][sector][fuel][net]))/np.sum(em_tot[pollutant][sector][fuel][net])
+                        print(a, pollutant, sector, fuel, net)
                     else:
-                        em_new[pollutant][sector][fuel][net] = ser_tot[sector][net] * ef
-#                        a = em_new[pollutant][sector][fuel][net] - em_tot[pollutant][sector][fuel][net]
-#                        print(a, pollutant, sector, fuel, net)
+                        em_new[pollutant][sector][fuel][net] = (ser[sector][net] * ef * area_area / 100)
+                        a = (np.sum(em_new[pollutant][sector][fuel][net]) - np.sum(em_tot[pollutant][sector][fuel][net]))/np.sum(em_tot[pollutant][sector][fuel][net])
+                        print(a, pollutant, sector, fuel, net)
                         
     # -------------------------------------------------------------------------
     # Running module1 
-    # -------------------------------------------------------------------------
+    # --------------------------------------------------------`-----------------
                     
     em_new_sum={}
     em_tot_sum={}
+    em_new_percell={}
+    em_tot_percell={}
     for pollutant in pollutant_lst: 
-        em_new_sum[pollutant] = np.sum(np.sum(np.sum(em_new[pollutant][sector][fuel][net] for net in em_new[pollutant][sector][fuel]) for fuel in em_new[pollutant][sector]) for sector in em_new[pollutant])
-        em_tot_sum[pollutant] = np.sum(np.sum(np.sum(em_tot[pollutant][sector][fuel][net] for net in em_tot[pollutant][sector][fuel]) for fuel in em_tot[pollutant][sector]) for sector in em_tot[pollutant])
+        em_new_percell[pollutant] = np.sum(np.sum(np.sum(em_new[pollutant][sector][fuel][net] for net in em_new[pollutant][sector][fuel]) for fuel in em_new[pollutant][sector]) for sector in em_new[pollutant])
+        em_tot_percell[pollutant] = np.sum(np.sum(np.sum(em_tot[pollutant][sector][fuel][net] for net in em_tot[pollutant][sector][fuel]) for fuel in em_tot[pollutant][sector]) for sector in em_tot[pollutant])
+        em_tot_sum[pollutant] = np.sum(em_tot_percell[pollutant])
+        em_new_sum[pollutant] = np.sum(em_new_percell[pollutant])
+    
+    delta_emission_dict={}
+    for precursor in precursor_lst:     
+        for pollutant in pollutant_lst:
+            if pollutant == precursor:
+                delta_emission_dict[precursor] = (em_tot_percell[pollutant]-em_new_percell[pollutant])
+#                checkdif[precursor]=(em_tot[pollutant]-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
+        if precursor == 'NMVOC':
+                delta_emission_dict[precursor] = (em_tot_percell['VOC']-em_new_percell['VOC'])
+#                checkdif[precursor]=(em_tot['VOC']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
+        if precursor == 'SOx': 
+                delta_emission_dict[precursor] = (em_tot_percell['SO2']-em_new_percell['SO2'])
+#                checkdif[precursor]=(em_tot['SO2']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
+        if precursor == 'PPM':
+                delta_emission_dict[precursor] = (em_tot_percell['PM10']-em_new_percell['PM10'])
+#                checkdif[precursor]=(em_tot['PM10']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
+    
+    for precursor in precursor_lst:
+        delta_emission_dict[precursor] = np.sum((delta_emission_dict[precursor]/area), axis=0)
     
 #    checkdif={}   
+#    for precursor in precursor_lst: 
+#        red[precursor]={}
+##        checkdif[precursor]={}
+#        for pollutant in pollutant_lst:
+#            if pollutant == precursor:
+#                red[precursor] = (em_tot_sum[pollutant]-em_new_sum[pollutant])/em_bc[precursor,m_sector-1]*100
+##                checkdif[precursor]=(em_tot[pollutant]-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
+#        if precursor == 'NMVOC':
+#                red[precursor] = (em_tot_sum['VOC']-em_new_sum['VOC'])/em_bc[precursor,m_sector-1]*100
+##                checkdif[precursor]=(em_tot['VOC']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
+#        if precursor == 'SOx': 
+#                red[precursor] = (em_tot_sum['SO2']-em_new_sum['SO2'])/em_bc[precursor,m_sector-1]*100
+##                checkdif[precursor]=(em_tot['SO2']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
+#        if precursor == 'PPM':
+#                red[precursor] = (em_tot_sum['PM10']-em_new_sum['PM10'])/em_bc[precursor,m_sector-1]*100
+##                checkdif[precursor]=(em_tot['PM10']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
     for precursor in precursor_lst: 
         red[precursor]={}
 #        checkdif[precursor]={}
         for pollutant in pollutant_lst:
             if pollutant == precursor:
-                red[precursor] = (em_tot_sum[pollutant]-em_new_sum[pollutant])/em_bc[precursor,m_sector-1]*100
+                red[precursor] = (em_tot_sum[pollutant]-em_new_sum[pollutant])/em_tot_sum[pollutant]*100
 #                checkdif[precursor]=(em_tot[pollutant]-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
         if precursor == 'NMVOC':
-                red[precursor] = (em_tot_sum['VOC']-em_new_sum['VOC'])/em_bc[precursor,m_sector-1]*100
+                red[precursor] = (em_tot_sum['VOC']-em_new_sum['VOC'])/em_tot_sum['VOC']*100
 #                checkdif[precursor]=(em_tot['VOC']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
         if precursor == 'SOx': 
-                red[precursor] = (em_tot_sum['SO2']-em_new_sum['SO2'])/em_bc[precursor,m_sector-1]*100
+                red[precursor] = (em_tot_sum['SO2']-em_new_sum['SO2'])/em_tot_sum['SO2']*100
 #                checkdif[precursor]=(em_tot['SO2']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
         if precursor == 'PPM':
-                red[precursor] = (em_tot_sum['PM10']-em_new_sum['PM10'])/em_bc[precursor,m_sector-1]*100
+                red[precursor] = (em_tot_sum['PM10']-em_new_sum['PM10'])/em_tot_sum['PM10']*100
 #                checkdif[precursor]=(em_tot['PM10']-em_bc[precursor,m_sector-1])/em_bc[precursor,m_sector-1]*100
-
-#                
+                
     area_tot_em_dict = {}
     for precursor in precursor_lst:
         for snap in range(1, 11):
@@ -664,32 +685,35 @@ if __name__ == '__main__':
 #                                   NOx	        NMVOC       NH3           PPM        SOx
     reductions[m_sector-1] = [red['NOx'], red['NMVOC'], red['NH3'] , red['PPM'], red['SOx']]
     path_reduction_txt='input/sherpaeco_reduction.txt'
-    write_reductions(path_reduction_txt, reductions[m_sector-1])
+    write_reductions(path_reduction_txt, reductions[m_sector-1])  
 #
-#  
-
     # if it doesn't exist start=0 and dividsor=1
     progresslog = 'input/progress.log'
     start = time()
     output = 'output/'
-
+    output2 = 'output2/'
     # run module 1 with progress log
     proglog_filename = path_result_cdf_test + 'proglog'
     write_progress_log(proglog_filename, 25, 2)
     start = time()
     shrp.module1(path_emission_cdf_test, nc_selarea,
-                 path_reduction_txt, path_model_cdf_test, output)
+                    path_reduction_txt, path_model_cdf_test, output)
+    shrp1.module1(path_emission_cdf_test, nc_selarea,
+                    delta_emission_dict, path_model_cdf_test, output2)  
     stop = time()
     print('Module 1 run time: %s sec.' % (stop-start))
     remove(proglog_filename)
    
-#     -------------------------------------------------------------------------
-#     (Cost) Benefit Analysis 
-#     -------------------------------------------------------------------------
+###     -------------------------------------------------------------------------
+###     (Cost) Benefit Analysis 
+###     -------------------------------------------------------------------------
 
     deltaconc='output/delta_concentration.nc'
     deltayll_reg, deltayll_tot, delta_mort_tot, delta_mort_reg, delta_yll_pp = calc_impacts(deltaconc, area_area)
-##    
-    # -------------------------------------------------------------------------
-    # Output of results (todo)
-    # -------------------------------------------------------------------------
+    
+    deltaconc2='output2/delta_concentration.nc'
+    deltayll_reg2, deltayll_tot2, delta_mort_tot2, delta_mort_reg2, delta_yll_pp2 = calc_impacts(deltaconc2, area_area)
+###    
+#    # -------------------------------------------------------------------------
+#    # Output of results (todo)
+#    # -------------------------------------------------------------------------
