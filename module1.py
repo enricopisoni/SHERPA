@@ -26,7 +26,7 @@ from numpy import lib, zeros, sum, power, ones
 from math import isnan
 from sherpa_globals import path_result_cdf_test
 # path_emission_cdf_test, path_area_cdf_test, path_reduction_txt_test, path_model_cdf_test,
-from sherpa_auxiliaries import create_emission_reduction_dict, create_emission_dict, create_window, read_progress_log, write_progress_log
+from sherpa_auxiliaries import create_emission_reduction_dict, create_emission_dict, create_window, read_progress_log, write_progress_log, deltaNOx_to_deltaNO2
 import sys
 from time import time
 from os import remove
@@ -91,8 +91,10 @@ def create_delta_emission(path_emission_cdf, precursor_lst, path_area_cdf, path_
               
     return delta_emission_dict
 
+
 # function definition of source receptor model
-def module1(path_emission_cdf, path_area_cdf, path_reduction_txt, path_model_cdf, path_result_cdf, *progresslog):
+
+def module1(path_emission_cdf, path_area_cdf, path_reduction_txt, path_base_conc_cdf, path_model_cdf, path_result_cdf, *progresslog):
 
     # check if a progess log file was passed as argument
     if progresslog:
@@ -224,8 +226,18 @@ def module1(path_emission_cdf, path_area_cdf, path_reduction_txt, path_model_cdf
                     # sum_emissions_flat[precursor] = None
             
             cell_counter += 1
-
-
+    
+    # In the case of NO2 the variable 'delta_conc' contains the NOx concentrations as NO2-equivalent.
+    # NO2 concentration and concentration difference are calculated applying an empiric formula
+    # check if the pollutant is NO2, if so NO2 has to be calculated from NOx results w/ function 'deltaNOx_to_deltaNO2'
+    if (path_model_cdf.find('NO2eq') > -1):
+        rootgrp = Dataset(path_base_conc_cdf, 'r')
+        base_conc_nox = rootgrp.variables['conc'][:]  
+        base_conc_no2 = rootgrp.variables['NO2'][:]
+        rootgrp.close() 
+        delta_conc = deltaNOx_to_deltaNO2(delta_conc, base_conc_nox, base_conc_no2)
+    
+    
     # create a result netcdf 
     # -----------------------
     if write_netcdf_output == True:
@@ -243,9 +255,9 @@ def module1(path_emission_cdf, path_area_cdf, path_reduction_txt, path_model_cdf
         longitudes[:] = longitude_array
     
         # create delta concentration data
-        delta_conc_pm25 = rootgrp.createVariable('delta_concentration', 'f4', ('latitude', 'longitude',))
-        delta_conc_pm25.units = 'ug/m3'
-        delta_conc_pm25[:] = delta_conc
+        delta_conc_pol = rootgrp.createVariable('delta_concentration', 'f4', ('latitude', 'longitude',))
+        delta_conc_pol.units = 'ug/m3'
+        delta_conc_pol[:] = delta_conc
         
         rootgrp.close()
         
@@ -269,22 +281,18 @@ if __name__ == '__main__':
     progresslog = 'input/progress.log'
     
     # run module 1 without progress log
-    start = time()
-    start = time()
-    emission_1611_test = 'input/20151116_SR_no2_pm10_pm25/BC_emi_PM25_Y.nc'
-    area_1611_test = 'input/London_region.nc'
-    model_1611_test = 'input/20151116_SR_no2_pm10_pm25/SR_PM25_Y.nc'
-    # fullmodel = 'input/fullFunction/SR_PM25_Y_fullFunction.nc'
-    output_test_1611 = 'output/'
+    emissions = 'input/20151116_SR_no2_pm10_pm25/BC_emi_NO2_Y.nc'
+    reduction_area = 'input/London_region.nc'
+    reduction_snap = 'input/user_reduction_snap7.txt'
+    base_conc_cdf = 'input/20151116_SR_no2_pm10_pm25/BC_conc_NO2_NO2eq_Y_mgm3.nc'
+    model_NO2eq = 'input/20151116_SR_no2_pm10_pm25/SR_NO2eq_Y.nc'
+    output_path = 'output/NO2eq/London/'
  
     # run module 1 with progress log
     proglog_filename = path_result_cdf_test + 'proglog'
     write_progress_log(proglog_filename, 25, 2)
     start = time()
-    # module1(emission_1611_test, area_1611_test, 'input/user_reduction_snap7.txt', model_1611_test, output_test_1611) #, proglog_filename)
-    # debugging Denise's error
-    france = '../cities/Paris/Paris_NUTS0.nc'
-    module1('../bug_correction_20161205/one_emission_source.nc', france, 'input/user_reduction_snap7.txt', model_1611_test, '../bug_correction_20161205/') #, proglog_filename)
+    module1(emissions, reduction_area, reduction_snap, base_conc_cdf, model_NO2eq, output_path) 
     
     stop = time()
     print('Module 1 run time: %s sec.' % (stop-start))
