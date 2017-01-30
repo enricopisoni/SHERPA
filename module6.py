@@ -15,13 +15,13 @@ for compatibility the header is 'potency' in the output txt
 
 # imports
 from netCDF4 import Dataset
-from numpy import lib, zeros, sum, power, ones
+from numpy import lib, zeros, sum, power, ones, array
 from math import isnan
 # path_emission_cdf_test, path_area_cdf_test, path_reduction_txt_test, path_model_cdf_test,
 from time import time
 import sys
 from sherpa_globals import alpha_potency
-from sherpa_auxiliaries import create_emission_reduction_dict, create_emission_dict, create_window
+from sherpa_auxiliaries import create_emission_reduction_dict, create_emission_dict, create_window, deltaNOx_to_deltaNO2
 
 # function that applies reductions per snap sector and precursor to the emission netcdf
 def create_delta_emission(path_emission_cdf, precursor_lst, reduction_area_array, path_reduction_txt):
@@ -168,6 +168,8 @@ def module6(path_emission_cdf, path_area_cdf, target_cell_lat, target_cell_lon, 
             omega_ij = omega_dict[precursor][i_lat_target, i_lon_target]
             flatWeight_ij = flatWeight_dict[precursor][i_lat_target, i_lon_target]
             
+            # print('precursor: %s, alpha: %e, omega: %e, flatWeight: %e' % (precursor, alpha_ij, omega_ij, flatWeight_ij))
+            
             if not(isnan(alpha_ij)):
                 
                 # apply the weight to the flat weighted emissions
@@ -178,6 +180,15 @@ def module6(path_emission_cdf, path_area_cdf, target_cell_lat, target_cell_lon, 
                 # weighted_emissions_centre = (power(weights_centre, omega_ij) * emissions_centre).sum()
                 weighted_emissions_centre = ((power(window, omega_ij) - window_ones * flatWeight_ij) * emissions_centre).sum()
                 delta_conc[nuts_code] = delta_conc[nuts_code] + alpha_ij * (weighted_emissions_centre + weighted_emissions_flat)
+                
+        # In the case of NOx the NO2 concentrations have to be calculated with the NO2 fraction correlation
+        if (path_model_cdf.find('NO2eq') > -1):
+            rootgrp = Dataset(path_base_conc_cdf, 'r')
+            base_conc_nox = array(rootgrp.variables['conc'][i_lat_target, i_lon_target])  
+            base_conc_no2 = array(rootgrp.variables['NO2'][i_lat_target, i_lon_target])
+            rootgrp.close() 
+            delta_conc[nuts_code] = deltaNOx_to_deltaNO2(delta_conc[nuts_code], base_conc_nox, base_conc_no2)
+           
     
         # create an output map with in each nuts the DC in the target cell
         DC_target_arrray = DC_target_arrray + delta_conc[nuts_code] * reduction_area_array
@@ -221,18 +232,22 @@ if __name__ == '__main__':
     
     # run module 1 without progress log
     start = time()
-    start = time()
-    emission_1611_test = 'input/20151116_SR_no2_pm10_pm25/BC_emi_PM25_Y.nc'
+    # emissions = 'input/20151116_SR_no2_pm10_pm25/BC_emi_NO2_Y.nc'
+    emissions = 'input/20151116_SR_no2_pm10_pm25/BC_emi_PM25_Y.nc'
     nuts2_netcdf = 'input/EMI_RED_ATLAS_NUTS2.nc'
-    target_cell_lat = 51.51     # 51.51
-    target_cell_lon = -0.13  # 9.19      #-0.13
-    path_base_conc_cdf = 'input/20151116_SR_no2_pm10_pm25/BC_conc_PM25_Y.nc'
-    model_1611_test = 'input/20151116_SR_no2_pm10_pm25/SR_PM25_Y.nc'
-    path_result_cdf = 'output/'
+    target_cell_lat = 45.46         # Milan
+    target_cell_lon = 9.19          # Milan
+    path_reduction_txt = 'input/user_reduction_all50.txt'
+    # base_conc_cdf = 'input/20151116_SR_no2_pm10_pm25/BC_conc_NO2_NO2eq_Y_mgm3.nc'
+    base_conc_cdf = 'input/20151116_SR_no2_pm10_pm25/BC_conc_PM25_Y.nc'
+    # model_NO2eq = 'input/20151116_SR_no2_pm10_pm25/SR_NO2eq_Y.nc'
+    model_PM25old = 'input/20151116_SR_no2_pm10_pm25/SR_PM25_Y.nc'
+    model_PM25new = 'input/20151116_SR_no2_pm10_pm25/SR_PM25_Y_prctiles.nc'
+    output_path = 'output/NO2eq/Milan/'
      
     # run module 1 with progress log
     start = time()
-    module6(emission_1611_test, nuts2_netcdf, target_cell_lat, target_cell_lon, 'input/user_reduction_snap7.txt', path_base_conc_cdf, model_1611_test, path_result_cdf)
+    module6(emissions, nuts2_netcdf, target_cell_lat, target_cell_lon, path_reduction_txt, base_conc_cdf, model_PM25new, output_path)
     # print(DC)
     stop = time()
     print('Module 6 run time: %s sec.' % (stop-start))
