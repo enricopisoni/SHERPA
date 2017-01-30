@@ -6,7 +6,7 @@ auxiliary functions for SHERPA
 '''
 
 from netCDF4 import Dataset
-from numpy import zeros, power, sqrt
+from numpy import zeros, power, sqrt, array
 
 
 # create a dictionary with emission reductions per precursor and nuts
@@ -111,6 +111,40 @@ def write_progress_log(progress_log_filename, start, divisor):
     f_prog = open(progress_log_filename, 'w')
     f_prog.write('%f\t%f' % (start, divisor))
     f_prog.close()
+
+# define a function that applies the NO2 fraction correlation
+def fno2_corr(nox_array):
+    # this is the correlation used in GRAL
+    fno2_array = 30 / (nox_array + 35) + 0.18
+    return fno2_array
+
+
+# function that converts a delta_conc(NOx) into a delta_conc(NO2)
+def deltaNOx_to_deltaNO2(delta_conc_nox, base_conc_nox, base_conc_no2):
+    # read the NO2 concentration (should be inside the NO2eq/NOx file)
+    base_fno2 = base_conc_no2 / base_conc_nox 
+    base_fno2_rel_error = fno2_corr(base_conc_nox) / base_fno2
+    
+    # calculate NO2 fraction and the absolute NO2 concentration
+    # delta_conc = -(scen_conc_nox - base_conc_nox)
+    scen_conc_nox = base_conc_nox - delta_conc_nox
+    # the NO2 fraction given by the correlation has to be corrected with the NO2 fraction of each cell
+    # from the baseline scenario. Otherwise delta_NO2's will be created when the NO2 fraction is different for the 
+    # correlation and the basecase model results.
+    scen_fno2 = array(fno2_corr(scen_conc_nox) / base_fno2_rel_error)
+    # correlation can lead to NO2 fractions above 1, avoid this
+    scen_fno2[scen_fno2 > 1] = 1
+    scen_conc_no2 = scen_conc_nox * scen_fno2
+    # recalculate delta_conc
+    delta_conc_no2 = base_conc_no2 - scen_conc_no2
+    
+#     # add diagnostic variables in the case of NOx
+#     delta_conc_nox_var = rootgrp.createVariable('delta_conc_nox', 'f4', ('latitude', 'longitude',))
+#     delta_conc_nox_var.units = 'ug/m3'
+#     delta_conc_nox_var[:] = delta_conc_nox
+    
+    return delta_conc_no2
+
     
 if __name__ == '__main__':
     

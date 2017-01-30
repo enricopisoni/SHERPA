@@ -145,12 +145,13 @@ if __name__ == '__main__':
             path_emission_cdf = argv[2]     
             path_area_cdf = argv[3]
             path_reduction_txt = argv[4]
-            path_model_cdf = argv[5]
-            path_result_cdf = argv[6]
+            path_base_conc_cdf = argv[5]
+            path_model_cdf = argv[6]
+            path_result_cdf = argv[7]
             
             # run module 1
             print('running module1')
-            module1(path_emission_cdf, path_area_cdf, path_reduction_txt, path_model_cdf, path_result_cdf)
+            module1(path_emission_cdf, path_area_cdf, path_reduction_txt, path_base_conc_cdf, path_model_cdf, path_result_cdf)
             
         # ---------#
         # module 2 #
