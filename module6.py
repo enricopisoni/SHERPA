@@ -1,6 +1,8 @@
 '''
 Created on Jun 23, 2015
 
+!!!!!!!! this script is in the Accelerator Branch !!!!!!!!!!!!!
+
 Module 6 calculates for 1 cell the concentration change due to a 50 percent reductions in 
 the snap sectors defined in the input file 'path_reduction_txt'. Emission are reduced in
 each NUTS area in the input file 'path_area_cdf'
@@ -22,6 +24,48 @@ from time import time
 import sys
 from sherpa_globals import alpha_potency
 from sherpa_auxiliaries import create_emission_reduction_dict, create_emission_dict, create_window, deltaNOx_to_deltaNO2
+
+# extra variables for the accelerator
+n_lowres = 3   # width and height of the aggregation of emmissions, this number has to be odd!
+
+class Emissions:
+    def __init__(self, delta_emission_dict):
+        self.dem = delta_emission_dict
+        self.n_lat = delta_emission_dict['PPM'].shape[0]
+        self.n_lon = delta_emission_dict['PPM'].shape[1]
+        self.demhr = {}
+        self.demlr = {}
+    
+    def getLowResEmis(self, precursor, n_lowres, i_lat_target, i_lon_target):
+        i_lat_mod = i_lat_target % n_lowres
+        i_lon_mod = i_lon_target % n_lowres
+        i_tuple = (i_lat_mod, i_lon_mod)
+        radius = (n_lowres - 1) / 2
+        if i_tuple in self.dem.keys():
+            if precursor in (self.dem[i_tuple]).keys():
+                return self.dem[i_tuple][precursor]
+            else:
+                aggregated_emissions = zeros((self.nlat, self.n_lon))
+                for i_lat in range(i_lat_mod, self.n_lat, n_lowres):
+                    for i_lon in range(i_lon_mod, self.n_lon, n_lowres):
+                        # determine the aggregation range in the emission matrix
+                        i_lat_min = max(0, i_lat - radius) 
+                        i_lat_max = min(i_lat + radius + 1, self.n_lat)
+                        i_lon_min = max(0, i_lon - radius) 
+                        i_lon_max = min(i_lon + radius + 1, self.n_lon)
+                        # by dividing through n_lowres ^ 2, emissions outside the domain are assumed zero
+                        avg_emissions = aggregated_emissions[i_lat_min:i_lat_max,i_lon_min:i_lon_max].sum() / (n_lowres ^ 2)
+                        aggregated_emissions[i_lat_min:i_lat_max,i_lon_min:i_lon_max] = ones((n_lowres, n_lowres)) * avg_emissions
+                        
+            
+        
+        
+        # check if for the points centered around i_lat and i_lon emissions are aggregated
+        
+
+    # def getHiResEmis(self, precursor, i_lat, i_lon):
+        
+
 
 # function that applies reductions per snap sector and precursor to the emission netcdf
 def create_delta_emission(path_emission_cdf, precursor_lst, reduction_area_array, path_reduction_txt):
@@ -153,6 +197,13 @@ def module6(path_emission_cdf, path_area_cdf, target_cell_lat, target_cell_lon, 
         pad_delta_emission_dict = {}
         for precursor in precursor_lst:
             pad_delta_emission_dict[precursor] = lib.pad(delta_emission_dict[precursor], inner_radius, 'constant', constant_values=0)
+            
+        # create the aggregated emissions at low resolution
+        pad_delta_lowres_emission_dict = {}
+        for precursor in precursor_lst:
+            pad_delta_lowres_emission_dict[precursor] = lib.pad(delta_emission_dict[precursor], (n_lowres - 1) / 2, 'constant', constant_values=0)
+            
+       
         
         # apply source receptor relationships
         # -----------------------------------
@@ -166,20 +217,20 @@ def module6(path_emission_cdf, path_area_cdf, target_cell_lat, target_cell_lon, 
             # apply averaging window
             alpha_ij = alpha_dict[precursor][i_lat_target, i_lon_target]
             omega_ij = omega_dict[precursor][i_lat_target, i_lon_target]
-            flatWeight_ij = flatWeight_dict[precursor][i_lat_target, i_lon_target]
-            
-            # print('precursor: %s, alpha: %e, omega: %e, flatWeight: %e' % (precursor, alpha_ij, omega_ij, flatWeight_ij))
+            # flatWeight_ij = flatWeight_dict[precursor][i_lat_target, i_lon_target]
             
             if not(isnan(alpha_ij)):
                 
                 # apply the weight to the flat weighted emissions
-                weighted_emissions_flat = flatWeight_ij * sum_emissions_flat[precursor]  
+                # weighted_emissions_flat = flatWeight_ij * sum_emissions_flat[precursor]  
                 
                 emissions_centre = pad_delta_emission_dict[precursor][i_lat_target:(i_lat_target + n_lon_inner_win), i_lon_target:(i_lon_target + n_lat_inner_win)]
                 
                 # weighted_emissions_centre = (power(weights_centre, omega_ij) * emissions_centre).sum()
-                weighted_emissions_centre = ((power(window, omega_ij) - window_ones * flatWeight_ij) * emissions_centre).sum()
-                delta_conc[nuts_code] = delta_conc[nuts_code] + alpha_ij * (weighted_emissions_centre + weighted_emissions_flat)
+                # weighted_emissions_centre = ((power(window, omega_ij)) * emissions_centre).sum()
+                weighted_emissions_lowres = NaN
+                weighted_emissions_hires = NaN
+                delta_conc[nuts_code] = delta_conc[nuts_code] + alpha_ij * (weighted_emissions_lowres + weighted_emissions_hires)
                 
         # In the case of NOx the NO2 concentrations have to be calculated with the NO2 fraction correlation
         if (path_model_cdf.find('NO2eq') > -1):
@@ -224,6 +275,11 @@ def module6(path_emission_cdf, path_area_cdf, target_cell_lat, target_cell_lon, 
     # return delta_conc
 
 if __name__ == '__main__':
+    
+    # test the Emissions class
+    delta_emission_dict = {}
+    delta_emission_dict['PPM'] = zeros((11,11))
+    delta_emission_dict['PPM'][5,5] = 9
     
     # module 1 test inputs
     module = 1
