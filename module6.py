@@ -29,33 +29,81 @@ from sherpa_auxiliaries import create_emission_reduction_dict, create_emission_d
 n_lowres = 3   # width and height of the aggregation of emmissions, this number has to be odd!
 
 class Emissions:
-    def __init__(self, delta_emission_dict):
+    def __init__(self, n_lowres, delta_emission_dict):
         self.dem = delta_emission_dict
         self.n_lat = delta_emission_dict['PPM'].shape[0]
         self.n_lon = delta_emission_dict['PPM'].shape[1]
-        self.demhr = {}
-        self.demlr = {}
+        self.n_lowres = n_lowres
+        self.radius = (n_lowres - 1) / 2
+        self.aggregated_emissions = {}  
+        self.emissions_hires = {}    
     
-    def getLowResEmis(self, precursor, n_lowres, i_lat_target, i_lon_target):
+    # generates or looks up hi and low resolution emissions for a precursor and coordinate
+    def getHiLowEmis(self, precursor, i_lat_target, i_lon_target):
+        
         i_lat_mod = i_lat_target % n_lowres
         i_lon_mod = i_lon_target % n_lowres
-        i_tuple = (i_lat_mod, i_lon_mod)
-        radius = (n_lowres - 1) / 2
-        if i_tuple in self.dem.keys():
-            if precursor in (self.dem[i_tuple]).keys():
-                return self.dem[i_tuple][precursor]
+        i_tuple_mod = (i_lat_mod, i_lon_mod)
+        
+        # check if for the modulus of the row-column index tuple some aggregations are done
+        if not(i_tuple_mod in self.aggregated_emissions.keys()):
+            self.aggregated_emissions[i_tuple_mod] = {}
+            self.emissions_hires[i_tuple_mod] = {}
+            
+            # define the breaks of the aggregation blocks along latitudes and longitudes
+            if i_lon_mod == self.radius:
+                lon_breaks = [0]
             else:
-                aggregated_emissions = zeros((self.nlat, self.n_lon))
-                for i_lat in range(i_lat_mod, self.n_lat, n_lowres):
-                    for i_lon in range(i_lon_mod, self.n_lon, n_lowres):
-                        # determine the aggregation range in the emission matrix
-                        i_lat_min = max(0, i_lat - radius) 
-                        i_lat_max = min(i_lat + radius + 1, self.n_lat)
-                        i_lon_min = max(0, i_lon - radius) 
-                        i_lon_max = min(i_lon + radius + 1, self.n_lon)
-                        # by dividing through n_lowres ^ 2, emissions outside the domain are assumed zero
-                        avg_emissions = aggregated_emissions[i_lat_min:i_lat_max,i_lon_min:i_lon_max].sum() / (n_lowres ^ 2)
-                        aggregated_emissions[i_lat_min:i_lat_max,i_lon_min:i_lon_max] = ones((n_lowres, n_lowres)) * avg_emissions
+                lon_breaks = [0, i_lon_mod - self.radius]
+            # as long as the last element is smaller than n_lon, add a break
+            while lon_breaks[-1] < self.n_lon: 
+                next_break = lon_breaks[-1] + self.n_lowres   # last element + width of aggregation window
+                if next_break < self.n_lon:
+                    lon_breaks.append(next_break)
+                else:
+                    lon_breaks.append(self.n_lon)
+             
+            # same for latitudes
+            if i_lat_mod == self.radius:
+                lat_breaks = [0]
+            else:
+                lat_breaks = [0, i_lat_mod - self.radius]
+            while lat_breaks[-1] < self.n_lat: 
+                next_break = lat_breaks[-1] + self.n_lowres   # last element + width of aggregation window
+                if next_break < self.n_lat:
+                    lat_breaks.append(next_break)
+                else:
+                    lat_breaks.append(self.n_lat)
+            
+            self.aggregated_emissions[i_tuple_mod]['n_lat_agg'] = len(lat_breaks) - 1
+            self.aggregated_emissions[i_tuple_mod]['n_lon_agg'] = len(lon_breaks) - 1
+            self.aggregated_emissions[i_tuple_mod]['lat_breaks'] = lat_breaks
+            self.aggregated_emissions[i_tuple_mod]['lon_breaks'] = lon_breaks
+            
+        if not(precursor in (self.aggregated_emissions[i_tuple_mod]).keys()):
+            n_lat_agg = self.aggregated_emissions[i_tuple_mod]['n_lat_agg']
+            n_lon_agg = self.aggregated_emissions[i_tuple_mod]['n_lon_agg']
+            lat_breaks = self.aggregated_emissions[i_tuple_mod]['lat_breaks']
+            lon_breaks = self.aggregated_emissions[i_tuple_mod]['lon_breaks']
+            
+            self.aggregated_emissions[i_tuple_mod][precursor] = zeros((n_lat_agg, n_lon_agg))
+            self.emissions_hires[i_tuple_mod][precursor] = zeros((self.n_lat, self.n_lon))
+            for i_lat_agg in range(n_lat_agg):
+                for i_lon_agg in range(n_lon_agg):
+                    # select the block to be aggregated from delta_emissions[precursor]
+                    emis2aggregate = self.dem[precursor][lat_breaks[i_lat_agg]:lat_breaks[i_lat_agg + 1], lon_breaks[i_lon_agg]:lon_breaks[i_lon_agg + 1]]
+                    sum_emissions = emis2aggregate.sum()
+                    n_agg = emis2aggregate.size
+                    self.aggregated_emissions[i_tuple_mod][precursor][i_lat_agg, i_lon_agg] = sum_emissions
+                    # high resolution delta emissions are delta emissions minus average aggregated emissions
+                    self.emissions_hires[i_tuple_mod][precursor][lat_breaks[i_lat_agg]:lat_breaks[i_lat_agg + 1], lon_breaks[i_lon_agg]:lon_breaks[i_lon_agg + 1]] = emis2aggregate - sum_emissions / n_agg
+#                     print(self.aggregated_emissions[i_tuple_mod][precursor])
+#                     print(self.emissions_hires[i_tuple_mod][precursor])
+        
+        res_dict = {'emis_lowres': self.aggregated_emissions[i_tuple_mod][precursor], 'emis_hires': self.emissions_hires[i_tuple_mod][precursor]}
+        
+        return res_dict
+                        
                         
             
         
@@ -278,35 +326,57 @@ if __name__ == '__main__':
     
     # test the Emissions class
     delta_emission_dict = {}
-    delta_emission_dict['PPM'] = zeros((11,11))
-    delta_emission_dict['PPM'][5,5] = 9
+    delta_emission_dict['PPM'] = ones((380,480))
+    delta_emission_dict['PPM'][5,5] = 10
+    delta_emission_dict['PPM'][0,1] = 10
+    print(delta_emission_dict['PPM'])
+    print(delta_emission_dict['PPM'].sum())
     
-    # module 1 test inputs
-    module = 1
-    # if it doesn't exist strart=0 and dividsor=1
-    progresslog = 'input/progress.log'
-    
-    # run module 1 without progress log
+    test = Emissions(3, delta_emission_dict)
     start = time()
-    # emissions = 'input/20151116_SR_no2_pm10_pm25/BC_emi_NO2_Y.nc'
-    emissions = 'input/20151116_SR_no2_pm10_pm25/BC_emi_PM25_Y.nc'
-    nuts2_netcdf = 'input/EMI_RED_ATLAS_NUTS2.nc'
-    target_cell_lat = 45.46         # Milan
-    target_cell_lon = 9.19          # Milan
-    path_reduction_txt = 'input/user_reduction_all50.txt'
-    # base_conc_cdf = 'input/20151116_SR_no2_pm10_pm25/BC_conc_NO2_NO2eq_Y_mgm3.nc'
-    base_conc_cdf = 'input/20151116_SR_no2_pm10_pm25/BC_conc_PM25_Y.nc'
-    # model_NO2eq = 'input/20151116_SR_no2_pm10_pm25/SR_NO2eq_Y.nc'
-    model_PM25old = 'input/20151116_SR_no2_pm10_pm25/SR_PM25_Y.nc'
-    model_PM25new = 'input/20151116_SR_no2_pm10_pm25/SR_PM25_Y_prctiles.nc'
-    output_path = 'output/NO2eq/Milan/'
-     
-    # run module 1 with progress log
-    start = time()
-    module6(emissions, nuts2_netcdf, target_cell_lat, target_cell_lon, path_reduction_txt, base_conc_cdf, model_PM25new, output_path)
-    # print(DC)
+    HiLowEmis_dict = test.getHiLowEmis('PPM', 5, 5)
+    HiEmis = HiLowEmis_dict['emis_hires']
+    LowEmis = HiLowEmis_dict['emis_lowres']
+    print(HiEmis.sum())
+    print(LowEmis.sum())
     stop = time()
-    print('Module 6 run time: %s sec.' % (stop-start))
+    print('First call: %f' % (stop - start))
+    
+    start = time()
+    emis_low_res = test.getLowResEmis('PPM', 5, 5)
+    stop = time()
+    print('Second call: %f' % (stop - start))
+    
+    print(emis_low_res)
+    emis_low_res = test.getLowResEmis('PPM', 1, 1)
+    print(emis_low_res)
+    
+#     # module 1 test inputs
+#     module = 1
+#     # if it doesn't exist strart=0 and dividsor=1
+#     progresslog = 'input/progress.log'
+#     
+#     # run module 1 without progress log
+#     start = time()
+#     # emissions = 'input/20151116_SR_no2_pm10_pm25/BC_emi_NO2_Y.nc'
+#     emissions = 'input/20151116_SR_no2_pm10_pm25/BC_emi_PM25_Y.nc'
+#     nuts2_netcdf = 'input/EMI_RED_ATLAS_NUTS2.nc'
+#     target_cell_lat = 45.46         # Milan
+#     target_cell_lon = 9.19          # Milan
+#     path_reduction_txt = 'input/user_reduction_all50.txt'
+#     # base_conc_cdf = 'input/20151116_SR_no2_pm10_pm25/BC_conc_NO2_NO2eq_Y_mgm3.nc'
+#     base_conc_cdf = 'input/20151116_SR_no2_pm10_pm25/BC_conc_PM25_Y.nc'
+#     # model_NO2eq = 'input/20151116_SR_no2_pm10_pm25/SR_NO2eq_Y.nc'
+#     model_PM25old = 'input/20151116_SR_no2_pm10_pm25/SR_PM25_Y.nc'
+#     model_PM25new = 'input/20151116_SR_no2_pm10_pm25/SR_PM25_Y_prctiles.nc'
+#     output_path = 'output/NO2eq/Milan/'
+#      
+#     # run module 1 with progress log
+#     start = time()
+#     module6(emissions, nuts2_netcdf, target_cell_lat, target_cell_lon, path_reduction_txt, base_conc_cdf, model_PM25new, output_path)
+#     # print(DC)
+#     stop = time()
+#     print('Module 6 run time: %s sec.' % (stop-start))
      
     pass
 
