@@ -31,7 +31,7 @@ OUTPUT:
 # for importing matlab files
 import scipy.io as sio
 from PIL import Image
-from osgeo import gdal, osr #conda install -c conda-forge gdal
+from osgeo import gdal, ogr, osr #conda install -c conda-forge gdal
 from gdalconst import *
 from netCDF4 import Dataset # for using netCDF files
 import numpy as np # for scientific operators
@@ -440,7 +440,8 @@ if __name__ == '__main__':
     # List of subsectors of the m_sector
     sector_lst = ['TRA_RD_LD4C','TRA_RD_HDB','TRA_RD_LD2','TRA_RD_LD4T','TRA_RD_HDT','TRA_RD_M4' ]
     # network (** another option is 'all' but can be extended)
-    net_lst =['rur', 'urb', 'mot'] # 'rur', 'urb', 'mot' or 'all'
+#    net_lst =['rur', 'urb', 'mot'] # 'rur', 'urb', 'mot' or 'all'
+    net_lst =['all']
     # list of activity types
     acttype_lst = ['GSL', 'MD', 'GAS','LPG', 'TYRE', 'ABRASION','BRAKE']#, 'TYRE', 'ABRASION','BRAKE'] # 
     nonfuels_lst = ['TYRE', 'ABRASION','BRAKE']
@@ -454,7 +455,10 @@ if __name__ == '__main__':
     
     # uncomment to read inventories from Marco
     
-    readinventories(m_sector, pollutant_lst, sector_lst, net_lst, acttype_lst, nonfuels_lst, name_emi, name_gainsCO2, name_act_fossil,name_act_all,name_ser)
+#    readinventories(m_sector, pollutant_lst, sector_lst, net_lst, acttype_lst, 
+#                    nonfuels_lst, name_emi, name_gainsCO2, name_act_fossil,
+#                    name_act_all,name_ser)
+
     # -------------------------------------------------------------------------
     # Measures implementation (**will be translated to a def)
     # -------------------------------------------------------------------------
@@ -466,7 +470,7 @@ if __name__ == '__main__':
     act_all=load_obj(name_act_all)
     act_fossil=load_obj(name_act_fossil)
     
-  
+    # calculate the emission factor for every cell in the grid
     ef_inv = {}
     for pollutant in emi:
         for sector in emi[pollutant]:
@@ -479,7 +483,7 @@ if __name__ == '__main__':
                             ef_inv[pollutant,sector,aty,net] = np.where(act_all[sector][aty][net]==0, 0, (emi[pollutant][sector][aty][net]/act_all[sector][aty][net]))
                 if aty in nonfuels_lst:
                     for net in emi[pollutant][sector][aty]:
-                        ef_inv[pollutant,sector,aty,net] = np.where(ser_all[sector,net]==0, 0, (emi[pollutant][sector][aty][net]/ser_all[sector,net]))
+                        ef_inv[pollutant,sector,aty,net] = np.where(ser[sector]['TYRE'][net]==0, 0, (emi[pollutant][sector][aty][net]/ser[sector]['TYRE'][net]))
 
     # technical measures                      
     # New emission factors after the implementation of measures:
@@ -499,26 +503,27 @@ if __name__ == '__main__':
     for precursor in precursor_lst:
         em_bc[precursor,m_sector-1] = np.sum(emission_dict[precursor][m_sector-1] * area * area_area / 100)
     
-    # calculate delta emissions and inventory emissions in the area of interest 
+    # calculate delta emissions and inventory emissions per cell (in the area of interest) 
     delta_em_percell={}
     em_percell={}
     for pollutant in emi:
         for sector in emi[pollutant]:    
            for aty in emi[pollutant][sector]:
                 for net in emi[pollutant][sector][aty]:
-                    ef = ef_all[pollutant,sector,aty,net] *(1 - df.loc[pollutant,aty][sector])
+                   # ef = ef_inv[pollutant,sector,aty,net] *(1 - df.loc[pollutant,aty][sector])
                     if aty not in nonfuels_lst:
                         if pollutant != 'CO2':
                             delta_em_percell[pollutant,sector,aty,net]=act_all[sector][aty][net]*df.loc[pollutant,aty][sector]*area_area/100
-                            em_percell[pollutant,sector,aty,net]=act_all[sector][aty][net]*ef_all[pollutant,sector,aty,net] *area_area/100
+                            em_percell[pollutant,sector,aty,net]=act_all[sector][aty][net]*ef_inv[pollutant,sector,aty,net] *area_area/100
                         if pollutant=='CO2':
                             delta_em_percell[pollutant,sector,aty,net]=act_fossil[sector][aty][net]*df.loc[pollutant,aty][sector]*area_area/100
-                            em_percell[pollutant,sector,aty,net]=act_fossil[sector][aty][net]*ef_all[pollutant,sector,aty,net] *area_area/100
+                            em_percell[pollutant,sector,aty,net]=act_fossil[sector][aty][net]*ef_inv[pollutant,sector,aty,net] *area_area/100
                     if aty in nonfuels_lst:
                             delta_em_percell[pollutant,sector,aty,net]=ser[sector][aty][net]*df.loc[pollutant,aty][sector]*area_area/100
-                            em_percell[pollutant,sector,aty,net]=ser[sector][aty][net]*ef_all[pollutant,sector,aty,net] *area_area/100
+                            em_percell[pollutant,sector,aty,net]=ser[sector][aty][net]*ef_inv[pollutant,sector,aty,net] *area_area/100
 
 
+    # calculate delta emissions per pollutant and emissions per pollutant per cell and total from Marcos inventory 
     delta_em_pp_percell={}
     em_pp_percell={}
     delta_em_pp_t={}
@@ -578,68 +583,110 @@ if __name__ == '__main__':
     # Running module1 
     # -------------------------------------------------------------------------
     # if it doesn't exist start=0 and dividsor=1
-    progresslog = 'input/progress.log'
-    output = 'output/'
-    output2 = 'output2/'
-    output3 = 'output3/'
-     # run module 1 with progress log
-    proglog_filename = path_result_cdf_test + 'proglog'
-    write_progress_log(proglog_filename, 25, 2)
-    start = time()
-    shrp.module1(path_emission_cdf_test, nc_selarea,
-            path_reduction_txt, path_model_cdf_test, output)
-    
-    shrp1.module1(path_emission_cdf_test, nc_selarea,
-            delta_emission_dict, path_model_cdf_test, output2)  
-    
-    shrp1.module1(path_emission_cdf_test, nc_selarea,
-            delta_emission_dict_cst, path_model_cdf_test, output3)  
-    
-    stop = time()
-    print('Module 1 run time: %s sec.' % (stop-start))
-    remove(proglog_filename)
-       
+#    progresslog = 'input/progress.log'
+#    output = 'output/'
+#    output2 = 'output2/'
+#    output3 = 'output3/'
+#    # run module 1 with progress log
+#     
+#    proglog_filename = path_result_cdf_test + 'proglog'
+#    write_progress_log(proglog_filename, 25, 2)
+#    start = time()
+#    shrp.module1(path_emission_cdf_test, nc_selarea,
+#            path_reduction_txt, path_model_cdf_test, output)
+#    
+#    shrp1.module1(path_emission_cdf_test, nc_selarea,
+#            delta_emission_dict, path_model_cdf_test, output2)  
+#    
+#    shrp1.module1(path_emission_cdf_test, nc_selarea,
+#            delta_emission_dict_cst, path_model_cdf_test, output3)  
+#    
+#    stop = time()
+#    print('Module 1 run time: %s sec.' % (stop-start))
+#    remove(proglog_filename)
+#       
      # -------------------------------------------------------------------------
      # (Cost) Benefit Analysis 
      # -------------------------------------------------------------------------
 
-    deltaconc='output/delta_concentration.nc'
-    deltayll_reg, deltayll_tot, delta_mort_tot, delta_mort_reg, delta_yll = calc_impacts(deltaconc, area_area)
-    
-    deltaconc2='output2/delta_concentration.nc'
-    deltayll_reg2, deltayll_tot2, delta_mort_tot2, delta_mort_reg2, delta_yll2 = calc_impacts(deltaconc2, area_area)
-    
-    deltaconc3='output3/delta_concentration.nc'
-    deltayll_reg3, deltayll_tot3, delta_mort_tot3, delta_mort_reg3, delta_yll3 = calc_impacts(deltaconc3, area_area)
+#    deltaconc='output/delta_concentration.nc'
+#    deltayll_reg, deltayll_tot, delta_mort_tot, delta_mort_reg, delta_yll = calc_impacts(deltaconc, area_area)
+#    
+#    deltaconc2='output2/delta_concentration.nc'
+#    deltayll_reg2, deltayll_tot2, delta_mort_tot2, delta_mort_reg2, delta_yll2 = calc_impacts(deltaconc2, area_area)
+#    
+#    deltaconc3='output3/delta_concentration.nc'
+#    deltayll_reg3, deltayll_tot3, delta_mort_tot3, delta_mort_reg3, delta_yll3 = calc_impacts(deltaconc3, area_area)
     
     # -------------------------------------------------------------------------
     # Output of results (todo)
     # -------------------------------------------------------------------------
     # Check inventory
     # initialization
+    driver = ogr.GetDriverByName('ESRI Shapefile')
+    shp = driver.Open(r'\shapefiles')
+    layer = shp.GetLayer()
 
-    area_tot_em_dict = {}
+    em_dict_area_t = {}
     for precursor in precursor_lst:
         for snap in range(1, 11):
-            area_tot_em_dict[precursor, snap - 1] = np.sum(emission_dict[precursor][snap - 1]  * area * area_area / 100)  # [Mg] 
-##
-#    ser_tot = {} # total service [Mvkm] in the area of interest 
-#    ef_inv ={} # emission factor inventory (Marco)
-#    act_tot = {} # total activity [PJ] in the area of interest
+            em_dict_area_t[precursor, snap - 1] = np.sum(
+            emission_dict[precursor][snap - 1]  * area * area_area / 100)  # [Mg] 
 
-    # calculate activity in area per cell and total:  
- #   act_all_area_t ={}
- #   act_all_area = {}
-  #  act_fossil_area_t ={}
-  #  act_fossil_area = {}
-#    for sector in act_all:
-#        for aty in act_all[sector]:
-#            for net in act_all[sector][aty]:   
+    ser_area_t = {} # total service [Mvkm] in the area of interest 
+    act_all_area_t = {} # total activity [PJ] in the area of interest
+    act_foss_area_t = {} # total activity [PJ] in the area of interest
+    emiCO2_area_t = {}
+    emiPM10_area_t={}
+    emiNOx_area_t={}
+    gainsCO2_area_t = {}
+    emiNH3_area_t = {}
+    emiSO2_area_t ={}
+
+
+    for sector in act_all:
+        for aty in act_all[sector]:
+            for net in act_all[sector][aty]:
 #                act_all_area[sector,aty,net] = act_all[sector][aty][net] * area_area / 100  # [PJ] 
-#                act_all_area_t[sector,aty,net] = np.sum(act_all_area[sector,aty,net])  # [PJ]
-#                act_fossil_area[sector,aty,net] = act_fossil[sector][aty][net] * area_area / 100  # [PJ]
-#                act_fossil_area_t[sector,aty,net] = np.sum(act_fossil_area[sector,aty,net])  # [PJ] 
+                act_all_area_t[sector,aty,net] = np.sum(act_all[sector][aty][net] * area_area / 100 )  # [PJ]
+                act_foss_area_t[sector,aty,net] = np.sum(act_fossil[sector][aty][net] * area_area / 100)  # [PJ]
+
+#                for pollutant in ['CO2']:
+#                    try:
+                emiCO2_area_t[sector, aty, net]=np.sum(emi['CO2'][sector][aty][net] * area_area / 100)
+                gainsCO2_area_t[sector, aty, net]=np.sum(gainsCO2[sector][aty][net] * area_area / 100)
+                emiPM10_area_t[sector, aty, net]=np.sum(emi['PM10'][sector][aty][net] * area_area / 100)
+                emiNOx_area_t[sector, aty, net]=np.sum(emi['NOx'][sector][aty][net] * area_area / 100)
+                try:
+                    emiSO2_area_t[sector, aty, net]=np.sum(emi['SO2'][sector][aty][net] * area_area / 100)                   
+                except(KeyError):
+                    emiSO2_area_t[sector, aty, net]=0
+    pd.set_option('precision', 5)                
+#   act_fossil_area_t[sector,aty,net] = np.sum(act_fossil_area[sector,aty,net])  # [PJ] 
+    # create dataframe with activities (all, fossil) and emissions 
+    data= np.transpose([(list(act_all_area_t.values())),
+                        (list(act_foss_area_t.values())),
+                        (list(gainsCO2_area_t.values())),(list(emiPM10_area_t.values())),
+                        (list(emiNOx_area_t.values())),
+                        (list(emiSO2_area_t.values()))])
+    index = pd.MultiIndex.from_tuples(list(act_all_area_t.keys()), names=['sector', 'aty','net'])
+    dfact=pd.DataFrame(data,index, columns =['act_all', 'act_foss','CO2','PM10','NOx','SO2']).sortlevel()
+   
+    comparison=dfact.groupby(level=1).sum()
+    grouped=dfact.groupby(level=['sector', 'aty']).sum()
+    grouped2=dfact.groupby(level=['sector', 'aty']).apply(lambda x:
+                                                 100 * x / x.sum())
+#    state_pcts = state_office.groupby(level=0).apply(lambda x:
+#                                                 100 * x / float(x.sum()))
+
+
+
+#    act_all_area_t_net={}
+#    for sector in act_all:
+#            for aty in act_all[sector]:
+#                act_all_area_t_net[sector,aty]=np.sum(act_all_area_t[sector,aty,net] for net in act_all[sector][aty])
     
+                    
 #    act_all_pp_area_t={}
 #    for net in emi['CO2'][sector][aty]:
 #        act_all_pp_area_t[net] = np.sum(np.sum(act_all_area_t[sector,aty,net]  for aty in emi['CO2'][sector]) for sector in emi['CO2'])
@@ -781,20 +828,20 @@ if __name__ == '__main__':
 ##    emissions[:] = np.where(act_all['TRA_RD_LD4C']['GSL']['mot']==0, 0, (((emi['VOC']['TRA_RD_LD4C']['GSL']['mot'])/(act_all['TRA_RD_4C']['GSL']['mot']))))
 #    co2em.close()
 # 
-#    
-    nc_file3 = 'netcdf/deltayllpploriginal.nc'
-    co2em = Dataset(nc_file3, mode='w', format='NETCDF3_CLASSIC')
-    co2em.createDimension('latitude',  len(emission_dict['lat_array']))
-    co2em.createDimension('longitude', len(emission_dict['lon_array'])) #x
-    latitude = co2em.createVariable('latitude', 'f4', ('latitude',))
-    longitude = co2em.createVariable('longitude', 'f4', ('longitude',))
-    emissions = co2em.createVariable('emissions', 'f4', ('latitude', 'longitude'))
-    co2em.variables['emissions'].units = 'unit'
-    co2em.variables['emissions'].long_name = 'unit'
-    longitude[:] = emission_dict['lon_array']
-    latitude[:] = emission_dict['lat_array']
-#    emissions[:] = ef_all['CO2','TRA_RD_LD4T','GSL','mot']
-    emissions[:] = ef_inv['NOx','TRA_RD_HDB','MD','mot'] #np.where(act_fossil['TRA_RD_LD4T']['GSL']['all']==0, 0, (emi['CO2']['TRA_RD_LD4T']['GSL']['all']/act_fossil['TRA_RD_LD4T']['GSL']['all']))
-    co2em.close()
+##    
+#    nc_file3 = 'netcdf/deltayllpploriginal.nc'
+#    co2em = Dataset(nc_file3, mode='w', format='NETCDF3_CLASSIC')
+#    co2em.createDimension('latitude',  len(emission_dict['lat_array']))
+#    co2em.createDimension('longitude', len(emission_dict['lon_array'])) #x
+#    latitude = co2em.createVariable('latitude', 'f4', ('latitude',))
+#    longitude = co2em.createVariable('longitude', 'f4', ('longitude',))
+#    emissions = co2em.createVariable('emissions', 'f4', ('latitude', 'longitude'))
+#    co2em.variables['emissions'].units = 'unit'
+#    co2em.variables['emissions'].long_name = 'unit'
+#    longitude[:] = emission_dict['lon_array']
+#    latitude[:] = emission_dict['lat_array']
+##    emissions[:] = ef_all['CO2','TRA_RD_LD4T','GSL','mot']
+#    emissions[:] = ef_inv['NOx','TRA_RD_HDB','MD','mot'] #np.where(act_fossil['TRA_RD_LD4T']['GSL']['all']==0, 0, (emi['CO2']['TRA_RD_LD4T']['GSL']['all']/act_fossil['TRA_RD_LD4T']['GSL']['all']))
+#    co2em.close()
     
 #    np.sum(emi_area['NOx','TRA_RD_LD4C','GSL','urb']-em_new['NOx','TRA_RD_LD4C','GSL','urb'])
