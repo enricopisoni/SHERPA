@@ -138,22 +138,6 @@ def module1(path_emission_cdf, path_area_cdf, path_reduction_txt, path_base_conc
     
     # create flat window and a inner window
     borderweight = window[inner_radius, 0]
-#     print(flat_var_limit)
-#     flatweight = (window * (window < flat_var_limit)).sum() / (window < flat_var_limit).sum()
-#     print(flatweight)
-    
-#     # flat_window = ones((n_lat_win, n_lon_win)) * flatweight
-#     n_inner = 2 * inner_radius + 1
-#     inner_window = zeros((n_inner, n_inner))
-#     for iw in range(n_inner):
-#         for jw in range(n_inner):
-#             cell_dist = 1 / (1 + sqrt((iw - inner_radius) ** 2 + (jw - inner_radius) ** 2))
-#             if (cell_dist < flat_var_limit):
-#                 inner_window[iw, jw] = flatweight
-#             else:
-#                 inner_window[iw, jw] = cell_dist
-    
-#     inner_window = window[(radius - inner_radius):(radius + inner_radius + 1), (radius - inner_radius):(radius + inner_radius + 1)] 
     
     window_ones = ones(window.shape)
     for i in range(n_lat_inner_win):
@@ -171,7 +155,7 @@ def module1(path_emission_cdf, path_area_cdf, path_reduction_txt, path_base_conc
     last_progress_print = time()
 #     calculate weighted emissions for all precursors
 #     norm_delta_conc = zeros((n_lat, n_lon))
-    delta_conc = zeros((n_lat, n_lon))
+    delta_conc = zeros((n_lat, n_lon)) * float('nan')
     cell_counter = 0
     n_cell = n_lat * n_lon
     
@@ -198,6 +182,9 @@ def module1(path_emission_cdf, path_area_cdf, path_reduction_txt, path_base_conc
                 flatWeight_ij = flatWeight_dict[precursor][ie, je]
                 
                 if not(isnan(alpha_ij)):
+                    # if the model is available remove NaN value
+                    if isnan(delta_conc[ie, je]):
+                        delta_conc[ie, je] = 0
                     # update or recalculate flat weighted emissions for each precursor
 #                     if sum_emissions_flat[precursor] == None:
 #                         sum_emissions_flat[precursor] = pad_delta_emission_dict[precursor][ie:(ie + n_lon_outer_win), je:(je + n_lat_outer_win)].sum()
@@ -220,10 +207,6 @@ def module1(path_emission_cdf, path_area_cdf, path_reduction_txt, path_base_conc
                     # weighted_emissions_centre[weighted_emissions_centre < 0] = 0
                     # sum the contribution of the precursor
                     delta_conc[ie, je] = delta_conc[ie, je] + alpha_ij * (weighted_emissions_centre + weighted_emissions_flat)
-            
-#                 else:
-                    # reset the sum after Nan alphas
-                    # sum_emissions_flat[precursor] = None
             
             cell_counter += 1
     
@@ -282,11 +265,13 @@ if __name__ == '__main__':
     
     # run module 1 without progress log
     emissions = 'input/20151116_SR_no2_pm10_pm25/BC_emi_NO2_Y.nc'
-    reduction_area = 'input/London_region.nc'
-    reduction_snap = 'input/user_reduction_snap7.txt'
+    # reduction_area = 'input/London_region.nc'
+    reduction_area = 'input/area_selection_europe.nc'
+    # reduction_snap = 'input/user_reduction_snap7.txt'
+    reduction_snap = 'input/user_reduction_all100.txt'
     base_conc_cdf = 'input/20151116_SR_no2_pm10_pm25/BC_conc_NO2_NO2eq_Y_mgm3.nc'
     model_NO2eq = 'input/20151116_SR_no2_pm10_pm25/SR_NO2eq_Y.nc'
-    output_path = 'output/NO2eq/London/'
+    output_path = 'output/NO2eq/Europe/'
  
     # run module 1 with progress log
     proglog_filename = path_result_cdf_test + 'proglog'
