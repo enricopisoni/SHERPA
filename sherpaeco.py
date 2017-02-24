@@ -130,7 +130,7 @@ def calc_impacts(deltaconc, area_area):
         - area_area: area of interest (nc file with 100 in the cells of the area of interest)
         - deltaconc: path to the file  with the delta concentrations (output of module1)
     Output: 
-        - deltayll_reg, deltayll_tot, delta_mort_pp, delta_yll_pp
+        - deltayll_reg, deltayll_tot, delta_mort_tot, delta_mort_reg, delta_yl
     
     @author: peduzem
     """  
@@ -146,9 +146,9 @@ def calc_impacts(deltaconc, area_area):
     # total pop according to Marco (all age groups)
     sumpop=np.sum(popall)
 
-    # TOTAL population above 30 data.euro.who.int/dmdb/
+    # TOTAL population above 30 in EU28 data.euro.who.int/dmdb/
     pop = 331923577
-    # TOTAL DEATHS  above 30 data.euro.who.int/dmdb/
+    # TOTAL DEATHS  above 30 in EU28 data.euro.who.int/dmdb/
     deaths = 4639244
     # Potential Years of life loss, PYLL 30+ total in EU28 data.euro.who.int/dmdb/
     ylltot = 14038453.71
@@ -209,7 +209,7 @@ def calc_impacts(deltaconc, area_area):
 
 def tiftosherpagrid(pollutant, variable, sector, aty, net, arr):
     """
-     Open Marcos tif and regrid them according to Sherpas grid
+     Open Marcos tif and regrid them according to Sherpa's grid
      Input: 
      - pollutant, variable, sector, aty, net: to define which file to open
      Output:
@@ -218,7 +218,8 @@ def tiftosherpagrid(pollutant, variable, sector, aty, net, arr):
      NB: marco's grid cells are squared, sherpa's grid cell are rectangular
      values in marco's cells are in pairs (in line, 2by2 they have the same values
      so in Sherpa value in a cell is the sum of two adjacent cells in Marcos files)
-    
+     
+    @author: peduzem
     """
     gdal.UseExceptions()
     ds = None
@@ -230,7 +231,6 @@ def tiftosherpagrid(pollutant, variable, sector, aty, net, arr):
         em  = np.array(ds.GetRasterBand(1).ReadAsArray())
         ds = None
         # re-arrange emission inventory file for Sherpa's grid 
-        # (tried copying from Enrico's matlab):
         # initialize array
         Amine = em # Amine : matrix
         for i in range(0,382):
@@ -382,11 +382,10 @@ if __name__ == '__main__':
     rootgrp = Dataset('input/20151116_SR_no2_pm10_pm25/SR_PM25_Y.nc', 'r')
     lon_array = rootgrp.variables['lon'][0, :]
     lat_array = rootgrp.variables['lat'][:, 0]
-    n_lon = len(lon_array)  # len(rootgrp.dimensions['longitude'])
-    n_lat = len(lat_array)  # len(rootgrp.dimensions['latitude'])  
+    n_lon = len(lon_array)  
+    n_lat = len(lat_array)   
     rootgrp.close()
            
-       
     # Area of each cell in the domain    
     nc_area = 'input/JRC01.nc'
     rootgrp = Dataset(nc_area, mode='r')
@@ -394,11 +393,10 @@ if __name__ == '__main__':
     area_units = rootgrp.variables['surface'].units
     rootgrp.close() 
     
-    
     # open area of interest selarea = selected area
-    # This is just to check data with Austria (0), Italy (16) comment to consider the area of 
-    # interest already defined(see below), NUTS1 - ile de france (41)
-#    nc_file_at = 'input/EMI_RED_ATLAS_NUTS1.nc'
+    # Can be NUTSO - Austria (0), Italy (16) 
+    # Or NUTS1 - ile de france (41)
+    # nc_file_at = 'input/EMI_RED_ATLAS_NUTS1.nc'
     nc_file_at = 'input/EMI_RED_ATLAS_NUTS0.nc'
     rootgrp = Dataset(nc_file_at, mode='r')
     area_area = rootgrp.variables['AREA'][0][:] 
@@ -440,8 +438,8 @@ if __name__ == '__main__':
     # List of subsectors of the m_sector
     sector_lst = ['TRA_RD_LD4C','TRA_RD_HDB','TRA_RD_LD2','TRA_RD_LD4T','TRA_RD_HDT','TRA_RD_M4' ]
     # network (** another option is 'all' but can be extended)
-#    net_lst =['rur', 'urb', 'mot'] # 'rur', 'urb', 'mot' or 'all'
-    net_lst =['all']
+    net_lst =['rur', 'urb', 'mot'] # 'rur', 'urb', 'mot' or 'all'
+#    net_lst =['all']
     # list of activity types
     acttype_lst = ['GSL', 'MD', 'GAS','LPG', 'TYRE', 'ABRASION','BRAKE']#, 'TYRE', 'ABRASION','BRAKE'] # 
     nonfuels_lst = ['TYRE', 'ABRASION','BRAKE']
@@ -451,6 +449,7 @@ if __name__ == '__main__':
     name_ser= 'ser'
     name_act_fossil='act_fossil'
     name_act_all='act_all'
+
     # -------------------------------------------------------------------------
     
     # uncomment to read inventories from Marco
@@ -583,44 +582,46 @@ if __name__ == '__main__':
     # Running module1 
     # -------------------------------------------------------------------------
     # if it doesn't exist start=0 and dividsor=1
-#    progresslog = 'input/progress.log'
-#    output = 'output/'
-#    output2 = 'output2/'
-#    output3 = 'output3/'
-#    # run module 1 with progress log
-#     
-#    proglog_filename = path_result_cdf_test + 'proglog'
-#    write_progress_log(proglog_filename, 25, 2)
-#    start = time()
-#    shrp.module1(path_emission_cdf_test, nc_selarea,
-#            path_reduction_txt, path_model_cdf_test, output)
-#    
-#    shrp1.module1(path_emission_cdf_test, nc_selarea,
-#            delta_emission_dict, path_model_cdf_test, output2)  
-#    
-#    shrp1.module1(path_emission_cdf_test, nc_selarea,
-#            delta_emission_dict_cst, path_model_cdf_test, output3)  
-#    
-#    stop = time()
-#    print('Module 1 run time: %s sec.' % (stop-start))
-#    remove(proglog_filename)
+    progresslog = 'input/progress.log'
+    output = 'output/'
+    output2 = 'output2/'
+    output3 = 'output3/'
+    # run module 1 with progress log
+     
+    proglog_filename = path_result_cdf_test + 'proglog'
+    write_progress_log(proglog_filename, 25, 2)
+    start = time()
+    shrp.module1(path_emission_cdf_test, nc_selarea,
+            path_reduction_txt, path_model_cdf_test, output)
+    
+    shrp1.module1(path_emission_cdf_test, nc_selarea,
+            delta_emission_dict, path_model_cdf_test, output2)  
+    
+    shrp1.module1(path_emission_cdf_test, nc_selarea,
+            delta_emission_dict_cst, path_model_cdf_test, output3)  
+    
+    stop = time()
+    print('Module 1 run time: %s sec.' % (stop-start))
+    remove(proglog_filename)
 #       
      # -------------------------------------------------------------------------
      # (Cost) Benefit Analysis 
      # -------------------------------------------------------------------------
 
-#    deltaconc='output/delta_concentration.nc'
-#    deltayll_reg, deltayll_tot, delta_mort_tot, delta_mort_reg, delta_yll = calc_impacts(deltaconc, area_area)
-#    
-#    deltaconc2='output2/delta_concentration.nc'
-#    deltayll_reg2, deltayll_tot2, delta_mort_tot2, delta_mort_reg2, delta_yll2 = calc_impacts(deltaconc2, area_area)
-#    
-#    deltaconc3='output3/delta_concentration.nc'
-#    deltayll_reg3, deltayll_tot3, delta_mort_tot3, delta_mort_reg3, delta_yll3 = calc_impacts(deltaconc3, area_area)
+    deltaconc='output/delta_concentration.nc'
+    deltayll_reg, deltayll_tot, delta_mort_tot, delta_mort_reg, delta_yll = calc_impacts(deltaconc, area_area)
+    
+    deltaconc2='output2/delta_concentration.nc'
+    deltayll_reg2, deltayll_tot2, delta_mort_tot2, delta_mort_reg2, delta_yll2 = calc_impacts(deltaconc2, area_area)
+    
+    deltaconc3='output3/delta_concentration.nc'
+    deltayll_reg3, deltayll_tot3, delta_mort_tot3, delta_mort_reg3, delta_yll3 = calc_impacts(deltaconc3, area_area)
     
     # -------------------------------------------------------------------------
     # Output of results (todo)
     # -------------------------------------------------------------------------
+    
+    
     # Check inventory
     # initialization
     driver = ogr.GetDriverByName('ESRI Shapefile')
@@ -657,6 +658,7 @@ if __name__ == '__main__':
                 gainsCO2_area_t[sector, aty, net]=np.sum(gainsCO2[sector][aty][net] * area_area / 100)
                 emiPM10_area_t[sector, aty, net]=np.sum(emi['PM10'][sector][aty][net] * area_area / 100)
                 emiNOx_area_t[sector, aty, net]=np.sum(emi['NOx'][sector][aty][net] * area_area / 100)
+                emiNH3_area_t[sector, aty, net]=np.sum(emi['NH3'][sector][aty][net] * area_area / 100)
                 try:
                     emiSO2_area_t[sector, aty, net]=np.sum(emi['SO2'][sector][aty][net] * area_area / 100)                   
                 except(KeyError):
@@ -666,11 +668,14 @@ if __name__ == '__main__':
     # create dataframe with activities (all, fossil) and emissions 
     data= np.transpose([(list(act_all_area_t.values())),
                         (list(act_foss_area_t.values())),
-                        (list(gainsCO2_area_t.values())),(list(emiPM10_area_t.values())),
-                        (list(emiNOx_area_t.values())),
-                        (list(emiSO2_area_t.values()))])
+#                        (list(gainsCO2_area_t.values())),
+#                        (list(emiPM10_area_t.values())),
+#                        (list(emiNOx_area_t.values())),
+#                        (list(emiSO2_area_t.values())),
+                        (list(emiNH3_area_t.values()))])
     index = pd.MultiIndex.from_tuples(list(act_all_area_t.keys()), names=['sector', 'aty','net'])
-    dfact=pd.DataFrame(data,index, columns =['act_all', 'act_foss','CO2','PM10','NOx','SO2']).sortlevel()
+#    dfact=pd.DataFrame(data,index, columns =['act_all', 'act_foss','CO2','PM10','NOx','SO2', 'NH3']).sortlevel()
+    dfact=pd.DataFrame(data,index, columns =['act_all', 'act_foss','NH3']).sortlevel()
    
     comparison=dfact.groupby(level=1).sum()
     grouped=dfact.groupby(level=['sector', 'aty']).sum()
